@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Ellipsis } from "lucide-react";
 import type { LayerGroup, Map as LeafletMap, Renderer, TileLayer } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { bearing, miles } from "@/lib/marine/geo";
@@ -173,6 +174,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [measure, setMeasure] = useState<string | null>(null);
   const [draftOn, setDraftOn] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const waypoints = useBoat((s) => s.waypoints);
   const track = useBoat((s) => s.track);
   const markMode = useBoat((s) => s.markMode);
@@ -627,39 +629,124 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
   return (
     <div className="relative h-full w-full touch-none">
       <div ref={host} className="fairwater-map h-full w-full" />
-      <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={showCoast}
-          className="h-12 rounded-md border border-line bg-surface px-3 text-sm font-medium text-fg"
-        >
-          Whole coast
-        </button>
-        <button
-          type="button"
-          onClick={() => void saveView()}
-          className="h-12 rounded-md border border-line bg-surface px-3 text-sm font-medium text-fg"
-        >
-          Save view
-        </button>
+      <div className="absolute top-3 left-3 z-[1000] flex max-w-[min(100%-1.5rem,18rem)] flex-col items-start gap-2">
+        {/* Phone: Run chips (Mark/Record) + one Tools overflow. Desktop: quiet overlays stay visible. */}
         {helmMode === "run" ? (
-          <>
-            <button type="button" onClick={() => toggleMark()} className={`h-12 rounded-md border border-line px-3 text-sm font-medium ${markMode ? "bg-accent text-accent-fg" : "bg-surface text-fg"}`}>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => toggleMark()}
+              className={`h-11 rounded-md border border-line px-3 text-sm font-medium ${markMode ? "bg-accent text-accent-fg" : "bg-surface/95 text-fg"}`}
+            >
               {markMode ? "Marking" : "Mark"}
             </button>
-            <button type="button" onClick={() => setRecording(!recording)} className={`h-12 rounded-md border border-line px-3 text-sm font-medium ${recording ? "bg-poor text-bg" : "bg-surface text-fg"}`}>
+            <button
+              type="button"
+              onClick={() => setRecording(!recording)}
+              className={`h-11 rounded-md border border-line px-3 text-sm font-medium ${recording ? "bg-poor text-bg" : "bg-surface/95 text-fg"}`}
+            >
               {recording ? "Stop" : "Record"}
             </button>
-            <button type="button" onClick={() => useBoat.getState().toggleRings()} className="h-12 rounded-md border border-line bg-surface px-3 text-sm font-medium text-fg">
+          </div>
+        ) : null}
+
+        {/* Phone / tablet: single overflow control */}
+        <div className="relative lg:hidden">
+          <button
+            type="button"
+            onClick={() => setToolsOpen((open) => !open)}
+            aria-expanded={toolsOpen}
+            aria-label="Map tools"
+            className="flex h-11 items-center gap-1.5 rounded-md border border-line bg-surface/95 px-3 text-sm font-medium text-fg"
+          >
+            <Ellipsis className="size-4" aria-hidden />
+            Tools
+          </button>
+          {toolsOpen ? (
+            <div className="absolute top-full left-0 mt-1 flex min-w-[11rem] flex-col gap-1 rounded-lg border border-line bg-surface p-1 shadow-none">
+              <button
+                type="button"
+                onClick={() => {
+                  showCoast();
+                  setToolsOpen(false);
+                }}
+                className="h-11 rounded-md px-3 text-left text-sm font-medium text-fg hover:bg-surface-2"
+              >
+                Whole coast
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void saveView();
+                  setToolsOpen(false);
+                }}
+                className="h-11 rounded-md px-3 text-left text-sm font-medium text-fg hover:bg-surface-2"
+              >
+                Save view
+              </button>
+              {helmMode === "run" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    useBoat.getState().toggleRings();
+                    setToolsOpen(false);
+                  }}
+                  className="h-11 rounded-md px-3 text-left text-sm font-medium text-fg hover:bg-surface-2"
+                >
+                  {showRings ? "Hide rings" : "Range rings"}
+                </button>
+              ) : null}
+              {chartView === "hybrid" || chartView === "fishing" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraftOn((on) => !on);
+                    setToolsOpen(false);
+                  }}
+                  className="h-11 rounded-md px-3 text-left text-sm font-medium text-fg hover:bg-surface-2"
+                >
+                  {draftOn ? "Hide draft danger" : "Draft danger"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        {/* Desktop: quiet map overlays (no tall stack on phone) */}
+        <div className="hidden flex-col gap-2 lg:flex">
+          <button
+            type="button"
+            onClick={showCoast}
+            className="h-11 rounded-md border border-line bg-surface/95 px-3 text-sm font-medium text-fg"
+          >
+            Whole coast
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveView()}
+            className="h-11 rounded-md border border-line bg-surface/95 px-3 text-sm font-medium text-fg"
+          >
+            Save view
+          </button>
+          {helmMode === "run" ? (
+            <button
+              type="button"
+              onClick={() => useBoat.getState().toggleRings()}
+              className="h-11 rounded-md border border-line bg-surface/95 px-3 text-sm font-medium text-fg"
+            >
               {showRings ? "Hide rings" : "Range rings"}
             </button>
-          </>
-        ) : null}
-        {chartView === "hybrid" || chartView === "fishing" ? (
-          <button type="button" onClick={() => setDraftOn((on) => !on)} className="h-12 rounded-md border border-line bg-surface px-3 text-sm font-medium text-fg">
-            {draftOn ? "Hide draft danger" : "Draft danger"}
-          </button>
-        ) : null}
+          ) : null}
+          {chartView === "hybrid" || chartView === "fishing" ? (
+            <button
+              type="button"
+              onClick={() => setDraftOn((on) => !on)}
+              className="h-11 rounded-md border border-line bg-surface/95 px-3 text-sm font-medium text-fg"
+            >
+              {draftOn ? "Hide draft danger" : "Draft danger"}
+            </button>
+          ) : null}
+        </div>
       </div>
       {saveNote ? (
         <p className="absolute right-3 bottom-7 z-[1000] max-w-[16rem] rounded-md bg-surface/95 px-2 py-1 text-xs text-muted">

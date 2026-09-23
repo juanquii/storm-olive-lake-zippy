@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,16 @@ export function ConditionsPanel() {
   const setRegion = useTrip((s) => s.setRegion);
   const [live, setLive] = useState(false);
   const [scoreOpen, setScoreOpen] = useState(false);
+  const regsRef = useRef<HTMLAnchorElement | null>(null);
   useEffect(() => setLive(true), []);
+  useEffect(() => {
+    function onOpenRegs() {
+      const el = regsRef.current ?? document.getElementById("fairwater-check-regs");
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    window.addEventListener("fairwater-open-regs", onOpenRegs);
+    return () => window.removeEventListener("fairwater-open-regs", onOpenRegs);
+  }, []);
 
   const ground = groundById(groundId);
   const stationPick = nearest(ground.lat, ground.lng, TIDE_STATIONS);
@@ -187,7 +196,12 @@ export function ConditionsPanel() {
         ) : (
           <p className="mb-3 text-sm text-muted">Best window waits on the conditions feed.</p>
         )}
-        <a className="mb-3 inline-flex min-h-12 items-center rounded-md bg-fair/20 px-3 text-sm font-medium text-fair" href="https://www.deq.nc.gov/about/divisions/marine-fisheries/rules-proclamations-and-size-and-bag-limits/fisheries-management-proclamations">
+        <a
+          id="fairwater-check-regs"
+          ref={regsRef}
+          className="mb-3 inline-flex min-h-12 items-center rounded-md bg-fair/20 px-3 text-sm font-medium text-fair"
+          href="https://www.deq.nc.gov/about/divisions/marine-fisheries/rules-proclamations-and-size-and-bag-limits/fisheries-management-proclamations"
+        >
           Legal to keep? · Check regs
         </a>
         {view ? (

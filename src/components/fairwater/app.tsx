@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LocateFixed, Moon, Search, Sun, X } from "lucide-react";
+import { formatHitLabel, searchFairwater, type SearchHit } from "@/lib/marine/search";
 import { FishingMap } from "@/components/fairwater/map";
 import { ConditionsPanel } from "@/components/fairwater/panel";
 import { Button } from "@/components/ui/button";
@@ -172,14 +173,10 @@ function Fairwater() {
   }, [helmMode, sheet]);
 
   const month = live ? new Date().getMonth() + 1 : 0;
-  const hits = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (q.length < 2) return [];
-    return GROUNDS.filter((g) => {
-      const hay = `${g.name} ${g.region} ${g.band} ${g.species.map((s) => s.name).join(" ")}`.toLowerCase();
-      return hay.includes(q);
-    }).slice(0, 7);
-  }, [query]);
+  const hits = useMemo(
+    () => searchFairwater(query, { region, month, limit: 10 }),
+    [query, region, month],
+  );
 
   function dragPanel(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -202,6 +199,28 @@ function Fairwater() {
     setGround(id);
     setQuery("");
     setGeoNote(null);
+  }
+
+  function openRegs() {
+    setHelmMode("fish");
+    setSheet("open");
+    setQuery("");
+    setGeoNote(null);
+    window.setTimeout(() => {
+      window.dispatchEvent(new Event("fairwater-open-regs"));
+    }, 80);
+  }
+
+  function chooseHit(hit: SearchHit) {
+    if (hit.kind === "regs") {
+      openRegs();
+      return;
+    }
+    choose(hit.groundId, hit.region);
+    if (hit.kind === "species" || hit.kind === "season") {
+      setHelmMode("fish");
+      setSheet("open");
+    }
   }
 
   function chooseBand(b: Band) {
@@ -261,9 +280,10 @@ function Fairwater() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search grounds or fish"
-            aria-label="Search grounds or fish"
+            placeholder="Search fish, grounds, regs, season"
+            aria-label="Search fish, grounds, regs, season"
             className="pr-12 pl-9"
+            autoComplete="off"
           />
           {query ? (
             <button
@@ -276,16 +296,16 @@ function Fairwater() {
             </button>
           ) : null}
           {hits.length ? (
-            <ul className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-line bg-surface shadow-none">
-              {hits.map((g) => (
-                <li key={g.id}>
+            <ul className="absolute z-30 mt-1 max-h-[min(24rem,55vh)] w-full overflow-y-auto rounded-lg border border-line bg-surface shadow-none">
+              {hits.map((hit) => (
+                <li key={hit.id}>
                   <button
                     type="button"
-                    className="flex min-h-12 w-full items-center justify-between gap-3 px-3 text-left text-sm hover:bg-surface-2"
-                    onClick={() => choose(g.id, g.region)}
+                    className="flex min-h-11 w-full flex-col items-start justify-center gap-0.5 px-3 py-2 text-left hover:bg-surface-2"
+                    onClick={() => chooseHit(hit)}
                   >
-                    <span className="truncate text-fg">{g.name}</span>
-                    <span className="shrink-0 text-muted">{BAND_LABEL[g.band]}</span>
+                    <span className="w-full truncate text-sm font-medium text-fg">{formatHitLabel(hit)}</span>
+                    <span className="w-full truncate text-xs text-muted">{hit.detail}</span>
                   </button>
                 </li>
               ))}
