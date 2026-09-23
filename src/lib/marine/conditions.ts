@@ -103,14 +103,15 @@ export const getConditions = createServerFn({ method: "GET" })
     const extremeTide = new URL(tideUrl);
     for (const [k, v] of Object.entries({ ...tideBase, interval: "hilo" })) extremeTide.searchParams.set(k, v);
 
-    const [marineRes, weatherRes, tideRes, extremeRes, current, buoy] = await Promise.all([
+    const [marineRes, weatherRes, tideRes, extremeRes, current, buoys] = await Promise.all([
       pull(marineUrl),
       pull(weatherUrl),
       pull(hourlyTide),
       pull(extremeTide),
       loadCurrent(data.lat, data.lng),
-      loadBuoy(data.lat, data.lng),
+      loadBuoys(data.lat, data.lng),
     ]);
+    const buoy = buoys.find((row) => row.waveFt != null) ?? buoys[0] ?? null;
 
     let marineHourly: MarineHour[] = [];
     if (marineRes.ok) {
@@ -137,7 +138,7 @@ export const getConditions = createServerFn({ method: "GET" })
       } else errors.push("No tide predictions for that station.");
     } else errors.push("Tide predictions didn't answer.");
 
-    return { marineHourly, weatherHourly, tide, current, buoy, errors };
+    return { marineHourly, weatherHourly, tide, current, buoy, buoys, errors };
   });
 
 async function pull(url: URL): Promise<{ ok: boolean; json: unknown }> {
@@ -336,7 +337,8 @@ export function currentAt(
   return null;
 }
 
-async function loadBuoy(lat: number, lng: number): Promise<BuoyObs | null> {
+/** Nearest NDBC stations with live obs (primary wave/wind first). Caps at 3. */
+async function loadBuoys(lat: number, lng: number): Promise<BuoyObs[]> {
   try {
     const stations = await buoyStations();
     const ranked = stations
@@ -344,10 +346,13 @@ async function loadBuoy(lat: number, lng: number): Promise<BuoyObs | null> {
       .filter((row) => row.distanceMi <= 90)
       .sort((a, b) => a.distanceMi - b.distanceMi)
       .slice(0, 4);
+    const found: BuoyObs[] = [];
+    let wavePrimary: BuoyObs | null = null;
     let windOnly: BuoyObs | null = null;
     for (const row of ranked) {
       const obs = await buoyObs(row.item.id);
       if (!obs) continue;
+      if (obs.waveFt == null && obs.windMph == null) continue;
       const full: BuoyObs = {
         ...obs,
         id: row.item.id,
@@ -356,12 +361,16 @@ async function loadBuoy(lat: number, lng: number): Promise<BuoyObs | null> {
         lng: row.item.lng,
         distanceMi: Math.round(row.distanceMi),
       };
-      if (obs.waveFt != null) return full;
-      if (!windOnly && obs.windMph != null) windOnly = full;
+      found.push(full);
+      if (obs.waveFt != null && !wavePrimary) wavePrimary = full;
+      else if (obs.windMph != null && !windOnly) windOnly = full;
+      if (found.length >= 3 && (wavePrimary || windOnly)) break;
     }
-    return windOnly;
+    const primary = wavePrimary ?? windOnly;
+    if (!primary) return found.slice(0, 3);
+    return [primary, ...found.filter((row) => row.id !== primary.id)].slice(0, 3);
   } catch {
-    return null;
+    return [];
   }
 }
 

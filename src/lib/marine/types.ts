@@ -103,5 +103,7 @@ export type Conditions = {
   tide: TideBundle | null;
   current: CurrentBundle | null;
   buoy: BuoyObs | null;
+  /** Nearest live NDBC buoys with obs (primary first). Max ~3. */
+  buoys: BuoyObs[];
   errors: string[];
 };

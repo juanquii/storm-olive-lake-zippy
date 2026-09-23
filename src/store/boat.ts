@@ -242,8 +242,18 @@ export const useBoat = create<BoatState>()(
       checklist: emptyChecklist(),
       nightHelm: false,
       setRule: (patch) => set(patch),
-      applySportsman262: () => set({ ...SPORTSMAN_262 }),
-      applySilverton38Acmy: () => set({ ...SILVERTON_38_ACMY }),
+      applySportsman262: () =>
+        set((s) => ({
+          ...SPORTSMAN_262,
+          homeMarinaId:
+            s.homeMarinaId == null || s.homeMarinaId === "homer-smith" ? "70-west" : s.homeMarinaId,
+        })),
+      applySilverton38Acmy: () =>
+        set({
+          ...SILVERTON_38_ACMY,
+          homeMarinaId: "homer-smith",
+          activeInletId: "beaufort",
+        }),
       setHomeMarina: (homeMarinaId) => set({ homeMarinaId }),
       setActiveInlet: (activeInletId) => set({ activeInletId }),
       setPlanningBurn: (planningBurnGph) => set({ planningBurnGph }),

@@ -3,10 +3,12 @@ import { Ellipsis } from "lucide-react";
 import type { LayerGroup, Map as LeafletMap, Renderer, TileLayer } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { bearing, miles } from "@/lib/marine/geo";
+import { compass } from "@/lib/marine/format";
 import { groundById, groundsIn } from "@/lib/marine/grounds";
 import { inletById, marinaById } from "@/lib/marine/inlets";
-import type { Band, RegionId } from "@/lib/marine/types";
-import { OFFSHORE_ONE_WAY_NM, planFuelNm, useBoat } from "@/store/boat";
+import { shoalAdvisory } from "@/lib/marine/shoal";
+import type { Band, BuoyObs, RegionId } from "@/lib/marine/types";
+import { OFFSHORE_ONE_WAY_NM, planFuelNm, SILVERTON_38_ACMY, useBoat } from "@/store/boat";
 import type { ChartView, HelmMode } from "@/store/trip";
 
 const OCEAN =
@@ -175,6 +177,9 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
   const [measure, setMeasure] = useState<string | null>(null);
   const [draftOn, setDraftOn] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [liveBuoys, setLiveBuoys] = useState<BuoyObs[]>([]);
+  const [tideFtMllw, setTideFtMllw] = useState<number | null>(null);
+  const [tideStage, setTideStage] = useState<"rising" | "falling" | "slack" | null>(null);
   const waypoints = useBoat((s) => s.waypoints);
   const track = useBoat((s) => s.track);
   const markMode = useBoat((s) => s.markMode);
@@ -190,11 +195,35 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
   const reservePct = useBoat((s) => s.reservePct);
   const draftFt = useBoat((s) => s.draftFt);
   const shoalDepthFt = useBoat((s) => s.shoalDepthFt);
+  const boatLabel = useBoat((s) => s.boatLabel);
   const addWaypoint = useBoat((s) => s.addWaypoint);
   const markRef = useRef(markMode);
   const addRef = useRef(addWaypoint);
   markRef.current = markMode;
   addRef.current = addWaypoint;
+
+  useEffect(() => {
+    const onLive = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        buoys?: BuoyObs[];
+        tideFtMllw?: number | null;
+        tideStage?: "rising" | "falling" | "slack" | null;
+      }>).detail;
+      if (!detail) return;
+      setLiveBuoys(Array.isArray(detail.buoys) ? detail.buoys.slice(0, 3) : []);
+      setTideFtMllw(typeof detail.tideFtMllw === "number" ? detail.tideFtMllw : null);
+      setTideStage(detail.tideStage === "rising" || detail.tideStage === "falling" || detail.tideStage === "slack" ? detail.tideStage : null);
+    };
+    window.addEventListener("fairwater-map-live", onLive);
+    return () => window.removeEventListener("fairwater-map-live", onLive);
+  }, []);
+
+  // Deep-draft Silverton: default draft danger on in Run (toggle still works).
+  useEffect(() => {
+    if (helmMode === "run" && boatLabel === SILVERTON_38_ACMY.boatLabel) {
+      setDraftOn(true);
+    }
+  }, [helmMode, boatLabel]);
 
   useEffect(() => {
     const el = host.current;
@@ -500,16 +529,93 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
           .bindTooltip("Includes reserve. Dashed on purpose.", { sticky: true })
           .addTo(navRef.current);
       }
-      if ((chartView === "hybrid" || chartView === "fishing") && draftOn && shoalDepthFt != null && shoalDepthFt < draftFt + 1) {
-        L.circle([inlet.lat, inlet.lng], { radius: 400, color: "#8a3030", weight: 2, fillColor: "#8a3030", fillOpacity: 0.25 })
+      const marginFt = 1;
+      const shoal = shoalAdvisory({
+        draftFt,
+        marginFt,
+        depthFtMllw: shoalDepthFt,
+        tideFtMllw,
+      });
+      const shoalThin =
+        shoalDepthFt != null && shoalDepthFt < draftFt + marginFt;
+      const tideThin =
+        tideFtMllw != null &&
+        (tideStage === "falling" || tideStage === "slack") &&
+        tideFtMllw < draftFt * 0.45;
+      const draftDanger =
+        (chartView === "hybrid" || chartView === "fishing") &&
+        draftOn &&
+        (shoal.level === "thin" || shoal.level === "risk" || shoalThin || (shoalDepthFt == null && tideThin));
+      if (draftDanger) {
+        L.circle([inlet.lat, inlet.lng], {
+          radius: 400,
+          color: "#8a3030",
+          weight: 2,
+          fillColor: "#8a3030",
+          fillOpacity: 0.25,
+          renderer,
+        })
+          .bindPopup(
+            `<strong>Draft / shoal advisory</strong><br/>Need ~${(draftFt + marginFt).toFixed(1)} ft (draft + margin). Advisory only — not a clearance guarantee.`,
+          )
           .bindTooltip("Depth advisory only — not a clearance guarantee.", { sticky: true })
+          .addTo(navRef.current);
+        if (home && boatLabel === SILVERTON_38_ACMY.boatLabel) {
+          L.circle([home.lat, home.lng], {
+            radius: 250,
+            color: "#8a3030",
+            weight: 2,
+            dashArray: "4 4",
+            fillColor: "#8a3030",
+            fillOpacity: 0.12,
+            renderer,
+          })
+            .bindPopup(
+              `<strong>Home marina advisory</strong><br/>${home.name}. Deep draft (~${draftFt.toFixed(1)} ft). Advisory only — not a clearance guarantee.`,
+            )
+            .bindTooltip("Home depth advisory only — not a clearance guarantee.", { sticky: true })
+            .addTo(navRef.current);
+        }
+      }
+
+      for (const buoy of liveBuoys) {
+        const windBits: string[] = [];
+        if (buoy.windMph != null) {
+          let wind = `${Math.round(buoy.windMph)} mph`;
+          if (buoy.windDir != null) wind += ` ${compass(buoy.windDir)}`;
+          windBits.push(wind);
+        }
+        if (buoy.gustMph != null) windBits.push(`gust ${Math.round(buoy.gustMph)}`);
+        const waveBits: string[] = [];
+        if (buoy.waveFt != null) waveBits.push(`${buoy.waveFt.toFixed(1)} ft`);
+        if (buoy.wavePeriodS != null) waveBits.push(`${Math.round(buoy.wavePeriodS)} s period`);
+        const html = [
+          `<strong>${buoy.name}</strong>`,
+          `<span style="opacity:.8">Live NDBC buoy feed · ${buoy.id}</span>`,
+          `${buoy.lat.toFixed(3)}, ${buoy.lng.toFixed(3)} · ${buoy.ageMin}m ago`,
+          windBits.length ? `Wind ${windBits.join(" · ")}` : null,
+          waveBits.length ? `Waves ${waveBits.join(" · ")}` : null,
+        ]
+          .filter(Boolean)
+          .join("<br/>");
+        L.circleMarker([buoy.lat, buoy.lng], {
+          radius: 9,
+          color: "#1d4e89",
+          weight: 2,
+          fillColor: "#5b9bd5",
+          fillOpacity: 0.95,
+          renderer,
+          interactive: true,
+        })
+          .bindPopup(html, { maxWidth: 260, autoPan: true })
+          .bindTooltip(`Live buoy · ${buoy.id}`, { direction: "top", className: "fw-label" })
           .addTo(navRef.current);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [booted, region, track, waypoints, activeInletId, homeMarinaId, showRings, helmMode, cruiseKt, burnGph, tankGal, reservePct, chartView, draftOn, shoalDepthFt, draftFt]);
+  }, [booted, region, track, waypoints, activeInletId, homeMarinaId, showRings, helmMode, cruiseKt, burnGph, tankGal, reservePct, chartView, draftOn, shoalDepthFt, draftFt, boatLabel, liveBuoys, tideFtMllw, tideStage]);
 
 
   useEffect(() => {

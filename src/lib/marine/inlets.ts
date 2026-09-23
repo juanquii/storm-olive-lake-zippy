@@ -14,7 +14,7 @@ export type Inlet = {
   groundId: string;
 };
 
-export type MarinaId = "70-west" | "coral-bay" | "sloop-point";
+export type MarinaId = "70-west" | "coral-bay" | "sloop-point" | "homer-smith";
 
 export type Marina = {
   id: MarinaId;
@@ -104,6 +104,7 @@ export const MARINAS: Marina[] = [
   { id: "70-west", name: "70 West Marina", lat: 34.72, lng: -76.708, defaultInletId: "beaufort" },
   { id: "coral-bay", name: "Coral Bay Marina", lat: 34.7, lng: -76.767, defaultInletId: "beaufort" },
   { id: "sloop-point", name: "Sloop Point Marina", lat: 34.4, lng: -77.6, defaultInletId: "masonboro" },
+  { id: "homer-smith", name: "Homer Smith Docks & Marina", lat: 34.7224, lng: -76.6650, defaultInletId: "beaufort" },
 ];
 
 export function inletById(id: InletId): Inlet {

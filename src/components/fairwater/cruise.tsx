@@ -333,6 +333,27 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
     window.dispatchEvent(new CustomEvent("fairwater-advisories", { detail: advisoryLines }));
   }, [advisoryLines.join("|")]);
 
+  useEffect(() => {
+    const list =
+      conditions?.buoys?.length ? conditions.buoys : conditions?.buoy ? [conditions.buoy] : [];
+    window.dispatchEvent(
+      new CustomEvent("fairwater-map-live", {
+        detail: {
+          buoys: list,
+          tideFtMllw: tideNow?.height ?? null,
+          tideStage: tideNow?.stage ?? null,
+          shoalLevel: shoal.level,
+        },
+      }),
+    );
+  }, [
+    conditions?.buoy?.id,
+    conditions?.buoys?.map((b) => b.id).join(","),
+    tideNow?.height,
+    tideNow?.stage,
+    shoal.level,
+  ]);
+
   const slotOptions = (
     [
       ["now", "Now"],
