@@ -89,7 +89,7 @@ export type BuoyObs = {
   lng: number;
   distanceMi: number;
   ageMin: number;
-  waveFt: number;
+  waveFt: number | null;
   wavePeriodS: number | null;
   waveDir: number | null;
   windMph: number | null;

@@ -148,8 +148,8 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
   const inletQuery = useQuery({
     queryKey: ["fairwater-inlet", inlet.id, inlet.stationId],
     enabled: live,
-    staleTime: 5 * 60 * 1000,
-    refetchInterval: 10 * 60 * 1000,
+    staleTime: 2 * 60 * 1000,
+    refetchInterval: 3 * 60 * 1000,
     refetchOnWindowFocus: true,
     queryFn: () =>
       getConditions({
@@ -209,15 +209,26 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
   const buoy = conditions?.buoy ?? null;
   const weather = conditions?.weatherHourly.length ? nearestWeather(conditions.weatherHourly, now.getTime()) : null;
   const officialWind = nwsWind(displayBrief?.forecast ?? null);
-  const windMph = weather?.windMph ?? buoy?.windMph ?? officialWind?.mph ?? null;
-  const windText =
-    weather?.windMph != null
-      ? `${Math.round(weather.windMph)} mph · model`
-      : buoy?.windMph != null
-        ? `${Math.round(buoy.windMph)} mph · buoy`
-        : officialWind
-          ? officialWind.label
-          : "—";
+  // Prefer NDBC buoy as LIVE wind; Open-Meteo current hour is model; NWS text last.
+  const windMph = buoy?.windMph ?? weather?.windMph ?? officialWind?.mph ?? null;
+  const windText = (() => {
+    if (buoy?.windMph != null) {
+      const bits = [`${Math.round(buoy.windMph)} mph`];
+      if (buoy.windDir != null) bits[0] += ` ${compass(buoy.windDir)}`;
+      if (buoy.gustMph != null) bits.push(`gust ${Math.round(buoy.gustMph)}`);
+      bits.push(`buoy ${buoy.ageMin}m ago`);
+      return bits.join(" · ");
+    }
+    if (weather?.windMph != null) return `${Math.round(weather.windMph)} mph · model`;
+    if (officialWind) return officialWind.label;
+    return "—";
+  })();
+  const windChip =
+    buoy?.windMph != null
+      ? `${Math.round(buoy.windMph)} mph${buoy.windDir != null ? ` ${compass(buoy.windDir)}` : ""} live`
+      : weather?.windMph != null
+        ? `${Math.round(weather.windMph)} mph model`
+        : null;
   const gate = inletGate({
     seasFt: buoy?.waveFt ?? null,
     periodS: buoy?.wavePeriodS ?? null,
@@ -338,7 +349,8 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
     let summary: string;
     if (limited) summary = "Forecast limited";
     else if (id === "now") {
-      summary = `${buoy ? `${buoy.waveFt.toFixed(1)} ft` : "seas n/a"} · ${windMph != null ? `${Math.round(windMph)} mph` : "wind n/a"}`;
+      const seas = buoy?.waveFt != null ? `${buoy.waveFt.toFixed(1)} ft` : "seas n/a";
+      summary = `${seas} · ${windMph != null ? `${Math.round(windMph)} mph` : "wind n/a"}`;
     } else {
       summary = `${sea?.waveFt?.toFixed(1) ?? "—"} ft · ${sea?.wavePeriodS ? `${Math.round(sea.wavePeriodS)} s` : "period n/a"} · ${wind?.windMph != null ? `${Math.round(wind.windMph)} mph` : "—"}`;
     }
@@ -389,10 +401,10 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent("fairwater-ready", {
-        detail: { ready, line: readyAges },
+        detail: { ready, line: windChip ? `${readyAges} · ${windChip}` : readyAges },
       }),
     );
-  }, [ready, readyAges]);
+  }, [ready, readyAges, windChip]);
 
   useEffect(() => {
     if (!boat.recording || !live) return;
@@ -489,9 +501,11 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
           <div>
             <dt className="text-subtle">Seas · NDBC</dt>
             <dd className="text-fg">
-              {buoy
+              {buoy?.waveFt != null
                 ? `${buoy.waveFt.toFixed(1)} ft · ${buoy.wavePeriodS ? `${Math.round(buoy.wavePeriodS)} s` : "period n/a"}`
-                : "No fresh buoy"}
+                : buoy
+                  ? "Wave n/a"
+                  : "No fresh buoy"}
             </dd>
           </div>
           <div>
