@@ -42,7 +42,7 @@ export const CHECKLIST_ITEMS: { id: string; label: string }[] = [
   { id: "vhf", label: "VHF radio check + channels 16/22A" },
   { id: "safety", label: "PFDs, throwables, flares, first aid" },
   { id: "kill", label: "Kill-switch lanyard + engine pre-start" },
-  { id: "phone", label: "Phone charged · Fairwater offline tiles saved" },
+  { id: "phone", label: "Phone charged · Necuze On offline tiles saved" },
 ];
 
 type RuleKeys =

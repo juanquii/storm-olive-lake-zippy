@@ -173,8 +173,6 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [measure, setMeasure] = useState<string | null>(null);
   const [draftOn, setDraftOn] = useState(false);
-  const [advisoriesOpen, setAdvisoriesOpen] = useState(false);
-  const [advisoryLines, setAdvisoryLines] = useState<string[]>([]);
   const waypoints = useBoat((s) => s.waypoints);
   const track = useBoat((s) => s.track);
   const markMode = useBoat((s) => s.markMode);
@@ -511,14 +509,6 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
     };
   }, [booted, region, track, waypoints, activeInletId, homeMarinaId, showRings, helmMode, cruiseKt, burnGph, tankGal, reservePct, chartView, draftOn, shoalDepthFt, draftFt]);
 
-  useEffect(() => {
-    const onList = (event: Event) => {
-      const detail = (event as CustomEvent<string[]>).detail;
-      setAdvisoryLines(Array.isArray(detail) ? detail : []);
-    };
-    window.addEventListener("fairwater-advisories", onList);
-    return () => window.removeEventListener("fairwater-advisories", onList);
-  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -599,6 +589,8 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
       return;
     }
     setSaveNote("Saving this view…");
+    window.dispatchEvent(new CustomEvent("fairwater-tiles", { detail: { pct: 0, count: 0 } }));
+    let done = 0;
     for (const coord of coords) {
       await cacheUrl(base.getTileUrl(coord as never));
       if (view === "chart") await cacheUrl(layer.getTileUrl(coord as never));
@@ -606,9 +598,14 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
         await cacheUrl(wmsUrl("2", coord.x, coord.y, coord.z));
         await cacheUrl(wmsUrl("1,3,4,6,7", coord.x, coord.y, coord.z));
       }
+      done += 1;
+      const pct = Math.round((done / coords.length) * 100);
+      window.dispatchEvent(new CustomEvent("fairwater-tiles", { detail: { pct, count: done } }));
+      setSaveNote(`Saving this view… ${pct}%`);
     }
     const keys = await caches.open("fairwater-charts").then((cache) => cache.keys());
     setSavedTiles(keys.length);
+    window.dispatchEvent(new CustomEvent("fairwater-tiles", { detail: { pct: null, count: keys.length } }));
     setSaveNote(`${keys.length} tiles saved for this view. Water you have not opened is not on the phone.`);
   }
 
@@ -656,11 +653,6 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
             <button type="button" onClick={() => useBoat.getState().toggleRings()} className="h-12 rounded-md border border-line bg-surface px-3 text-sm font-medium text-fg">
               {showRings ? "Hide rings" : "Range rings"}
             </button>
-            {advisoryLines.length ? (
-              <button type="button" onClick={() => setAdvisoriesOpen((open) => !open)} className="h-12 rounded-md border border-line bg-surface px-3 text-sm font-medium text-fg">
-                {advisoryLines.length} advisories
-              </button>
-            ) : null}
           </>
         ) : null}
         {chartView === "hybrid" || chartView === "fishing" ? (
@@ -686,13 +678,6 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
         <p className="absolute bottom-16 left-3 z-[1000] max-w-[18rem] rounded-md bg-surface/95 px-2 py-1 text-sm text-fg">
           {measure}
         </p>
-      ) : null}
-      {advisoriesOpen && advisoryLines.length ? (
-        <ul className="absolute top-3 right-3 z-[1000] max-w-[16rem] rounded-md bg-surface/95 p-2 text-sm text-fg">
-          {advisoryLines.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
       ) : null}
       {chartView === "satellite" ? (
         <p className="absolute bottom-7 left-3 z-[1000] max-w-[16rem] rounded-md bg-surface/95 px-2 py-1 text-xs text-muted">

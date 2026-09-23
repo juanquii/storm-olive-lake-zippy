@@ -71,6 +71,14 @@ function Fairwater() {
   const [gateLabel, setGateLabel] = useState<string | null>(null);
   const [fuelLabel, setFuelLabel] = useState<string | null>(null);
   const [biteLabel, setBiteLabel] = useState<string | null>(null);
+  const [readyInfo, setReadyInfo] = useState<{ ready: boolean; line: string } | null>(null);
+  const [tilePct, setTilePct] = useState<number | null>(null);
+  const [slot, setSlot] = useState<"now" | "plus6" | "tomorrow">("now");
+  const [slotOptions, setSlotOptions] = useState<
+    { id: "now" | "plus6" | "tomorrow"; label: string; summary: string; limited: boolean }[]
+  >([]);
+  const [advisoryLines, setAdvisoryLines] = useState<string[]>([]);
+  const [advisoriesOpen, setAdvisoriesOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const nightHelm = useBoat((s) => s.nightHelm);
   const setNightHelm = useBoat((s) => s.setNightHelm);
@@ -117,13 +125,42 @@ function Fairwater() {
     const onGate = (event: Event) => setGateLabel(String((event as CustomEvent).detail));
     const onFuel = (event: Event) => setFuelLabel(String((event as CustomEvent).detail));
     const onBite = (event: Event) => setBiteLabel(String((event as CustomEvent).detail));
+    const onReady = (event: Event) => {
+      const detail = (event as CustomEvent<{ ready: boolean; line: string }>).detail;
+      if (detail && typeof detail.ready === "boolean") setReadyInfo(detail);
+    };
+    const onSlots = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        slot: "now" | "plus6" | "tomorrow";
+        options: { id: "now" | "plus6" | "tomorrow"; label: string; summary: string; limited: boolean }[];
+      }>).detail;
+      if (!detail) return;
+      setSlot(detail.slot);
+      setSlotOptions(Array.isArray(detail.options) ? detail.options : []);
+    };
+    const onAdvisories = (event: Event) => {
+      const detail = (event as CustomEvent<string[]>).detail;
+      setAdvisoryLines(Array.isArray(detail) ? detail : []);
+    };
+    const onTiles = (event: Event) => {
+      const detail = (event as CustomEvent<{ pct?: number | null; count?: number }>).detail;
+      setTilePct(detail?.pct == null ? null : detail.pct);
+    };
     window.addEventListener("fairwater-gate", onGate);
     window.addEventListener("fairwater-fuel", onFuel);
     window.addEventListener("fairwater-bite", onBite);
+    window.addEventListener("fairwater-ready", onReady);
+    window.addEventListener("fairwater-slots", onSlots);
+    window.addEventListener("fairwater-advisories", onAdvisories);
+    window.addEventListener("fairwater-tiles", onTiles);
     return () => {
       window.removeEventListener("fairwater-gate", onGate);
       window.removeEventListener("fairwater-fuel", onFuel);
       window.removeEventListener("fairwater-bite", onBite);
+      window.removeEventListener("fairwater-ready", onReady);
+      window.removeEventListener("fairwater-slots", onSlots);
+      window.removeEventListener("fairwater-advisories", onAdvisories);
+      window.removeEventListener("fairwater-tiles", onTiles);
     };
   }, []);
 
@@ -213,8 +250,8 @@ function Fairwater() {
       <header className="border-b border-line">
         <div className="flex items-center gap-2 px-3 py-2 lg:gap-3 lg:px-4">
         <div className="hidden shrink-0 sm:block">
-          <p className="font-display text-xl leading-none tracking-tight">Fairwater</p>
-          <p className="text-xs text-muted">Fishing chart</p>
+          <p className="font-display text-xl leading-none tracking-tight">Necuze On</p>
+          <p className="text-xs text-muted">Boat fishing</p>
         </div>
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle" />
@@ -271,6 +308,21 @@ function Fairwater() {
         </Button>
         </div>
       </header>
+
+      {readyInfo ? (
+        <p
+          className={cn(
+            "border-b border-line px-3 py-1.5 text-xs sm:px-4 sm:text-sm",
+            readyInfo.ready ? "text-good" : "text-fair",
+          )}
+          role="status"
+        >
+          <span className="font-medium">{readyInfo.ready ? "Ready for sea" : "Not ready"}</span>
+          {" · "}
+          {readyInfo.line}
+          {tilePct != null ? ` · Download ${tilePct}%` : ""}
+        </p>
+      ) : null}
 
       {toolsOpen ? (
         <div className="fixed inset-0 z-[1200] flex flex-col bg-bg lg:hidden">
@@ -468,12 +520,75 @@ function Fairwater() {
               }}
             />
           </div>
-          {/* Thin edge strip: SOG · home nm · fuel — always visible in peek on phone */}
-          <p className="border-t border-line px-3 py-1 text-xs tabular-nums text-fg sm:py-1.5 sm:text-sm">
-            {cruiseKt.toFixed(0)} kt · {homeNm == null ? "No home marina" : `Home ${homeNm.toFixed(1)} nm`}
-            {homeMin != null ? ` · ${Math.round(homeMin)} min` : ""} · Fuel RT {fuelPlan.gallons.toFixed(0)} gal ·{" "}
-            {fuelPlan.home ? "HOME OK" : "GO HOME"}
-          </p>
+          {/* Leave peek: Now / +6h / Tomorrow — map-first chrome, not a panel */}
+          {helmMode === "leave" ? (
+            <div
+              className={cn(
+                "grid grid-cols-3 gap-1 border-t border-line px-2 py-1.5",
+                sheet !== "peek" && "max-sm:hidden",
+              )}
+              role="tablist"
+              aria-label="Departure"
+            >
+              {(slotOptions.length
+                ? slotOptions
+                : (
+                    [
+                      { id: "now" as const, label: "Now", summary: "—", limited: false },
+                      { id: "plus6" as const, label: "+6h", summary: "—", limited: true },
+                      { id: "tomorrow" as const, label: "Tomorrow", summary: "—", limited: true },
+                    ]
+                  )
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={slot === opt.id}
+                  disabled={opt.limited}
+                  onClick={() => {
+                    setSlot(opt.id);
+                    window.dispatchEvent(new CustomEvent("fairwater-set-slot", { detail: opt.id }));
+                  }}
+                  className={cn(
+                    "min-h-11 rounded-md border px-1.5 py-1 text-left",
+                    slot === opt.id ? "border-accent bg-surface-2" : "border-line bg-bg",
+                    opt.limited && "opacity-50",
+                  )}
+                >
+                  <span className="block text-xs font-medium text-fg sm:text-sm">{opt.label}</span>
+                  <span className="block truncate text-[10px] text-muted sm:text-xs">{opt.summary}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {/* Thin edge strip: SOG · home nm · fuel · advisories chip */}
+          <div className="flex items-center gap-2 border-t border-line px-3 py-1 text-xs tabular-nums text-fg sm:py-1.5 sm:text-sm">
+            <p className="min-w-0 flex-1 truncate">
+              {cruiseKt.toFixed(0)} kt · {homeNm == null ? "No home marina" : `Home ${homeNm.toFixed(1)} nm`}
+              {homeMin != null ? ` · ${Math.round(homeMin)} min` : ""} · Fuel RT {fuelPlan.gallons.toFixed(0)} gal ·{" "}
+              {fuelPlan.home ? "HOME OK" : "GO HOME"}
+            </p>
+            {advisoryLines.length ? (
+              <button
+                type="button"
+                className="h-8 shrink-0 rounded-md border border-line bg-surface-2 px-2 text-xs font-medium text-fg"
+                aria-expanded={advisoriesOpen}
+                onClick={() => setAdvisoriesOpen((open) => !open)}
+              >
+                {advisoryLines.length} advisories
+              </button>
+            ) : null}
+          </div>
+          {advisoriesOpen && advisoryLines.length ? (
+            <ul className="border-t border-line bg-surface px-3 py-2 text-xs text-fg sm:text-sm">
+              {advisoryLines.map((line) => (
+                <li key={line} className="py-0.5">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <p className="hidden border-t border-line px-3 py-1.5 text-xs text-muted sm:block">
             Advisory only — not a chartplotter. Confirm with NOAA charts / Coast Pilot / your eyes.
           </p>

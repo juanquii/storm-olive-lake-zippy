@@ -95,7 +95,7 @@ export const getConditions = createServerFn({ method: "GET" })
       time_zone: "gmt",
       units: "english",
       format: "json",
-      application: "Fairwater",
+      application: "NecuzeOn",
     };
 
     const hourlyTide = new URL(tideUrl);
@@ -246,7 +246,7 @@ async function loadCurrent(lat: number, lng: number): Promise<CurrentBundle | nu
     url.searchParams.set("time_zone", "gmt");
     url.searchParams.set("units", "english");
     url.searchParams.set("format", "json");
-    url.searchParams.set("application", "Fairwater");
+    url.searchParams.set("application", "NecuzeOn");
     const res = await pull(url);
     if (!res.ok) return null;
     const events = parseCurrentEvents(res.json);

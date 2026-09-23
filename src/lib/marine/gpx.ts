@@ -12,10 +12,10 @@ export function toGpx(
     .map((point) => `      <trkpt lat="${point.lat.toFixed(6)}" lon="${point.lng.toFixed(6)}"></trkpt>`)
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Fairwater" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="Necuze On" xmlns="http://www.topografix.com/GPX/1/1">
 ${wpt}
   <trk>
-    <name>Fairwater track</name>
+    <name>Necuze On track</name>
     <trkseg>
 ${pts}
     </trkseg>

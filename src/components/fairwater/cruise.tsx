@@ -322,6 +322,78 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
     window.dispatchEvent(new CustomEvent("fairwater-advisories", { detail: advisoryLines }));
   }, [advisoryLines.join("|")]);
 
+  const slotOptions = (
+    [
+      ["now", "Now"],
+      ["plus6", "+6h"],
+      ["tomorrow", "Tomorrow"],
+    ] as const
+  ).map(([id, label]) => {
+    const when = slotTime(id, now);
+    const sea = conditions ? nearRow(conditions.marineHourly, when) : null;
+    const wind = conditions ? nearRow(conditions.weatherHourly, when) : null;
+    const limited = id !== "now" && (sea?.waveFt == null || wind?.windMph == null);
+    const tideFlow = conditions ? currentAt(conditions.current, when) : null;
+    const ebb = tideFlow?.stage === "ebb" && (sea?.waveFt ?? buoy?.waveFt ?? 0) >= boat.maxSeasFt - 0.5;
+    let summary: string;
+    if (limited) summary = "Forecast limited";
+    else if (id === "now") {
+      summary = `${buoy ? `${buoy.waveFt.toFixed(1)} ft` : "seas n/a"} · ${windMph != null ? `${Math.round(windMph)} mph` : "wind n/a"}`;
+    } else {
+      summary = `${sea?.waveFt?.toFixed(1) ?? "—"} ft · ${sea?.wavePeriodS ? `${Math.round(sea.wavePeriodS)} s` : "period n/a"} · ${wind?.windMph != null ? `${Math.round(wind.windMph)} mph` : "—"}`;
+    }
+    if (ebb) summary += " · ebb×swell";
+    return { id, label, summary, limited };
+  });
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("fairwater-slots", { detail: { slot, options: slotOptions } }),
+    );
+  }, [slot, slotOptions.map((o) => `${o.id}:${o.summary}:${o.limited}`).join("|")]);
+
+  useEffect(() => {
+    const onSet = (event: Event) => {
+      const next = (event as CustomEvent<SlotId>).detail;
+      if (next === "now" || next === "plus6" || next === "tomorrow") setSlot(next);
+    };
+    window.addEventListener("fairwater-set-slot", onSet);
+    return () => window.removeEventListener("fairwater-set-slot", onSet);
+  }, []);
+
+  const condFresh = conditions
+    ? freshness(inletQuery.data ? new Date().toISOString() : cachedConditions?.at)
+    : "missing";
+  const gateFresh = checking
+    ? "missing"
+    : usingCache && cachedForInlet
+      ? freshness(cachedForInlet.at)
+      : inletQuery.data
+        ? "good"
+        : "missing";
+  const ready =
+    briefFresh !== "missing" &&
+    briefFresh !== "poor" &&
+    condFresh !== "missing" &&
+    condFresh !== "poor" &&
+    gateFresh !== "missing" &&
+    gateFresh !== "poor" &&
+    tiles > 0;
+  const readyAges = [
+    briefAge ? `Brief ${briefAge}` : brief.data ? "Brief live" : "Brief —",
+    conditionsAge ? `Conditions ${conditionsAge}` : conditions ? "Conditions live" : "Conditions —",
+    usingCache && cachedForInlet ? `Gate ${ageLabel(cachedForInlet.at)}` : inletQuery.data ? "Gate live" : "Gate —",
+    tiles > 0 ? `Tiles ${tiles}` : "Tiles none",
+  ].join(" · ");
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("fairwater-ready", {
+        detail: { ready, line: readyAges },
+      }),
+    );
+  }, [ready, readyAges]);
+
   useEffect(() => {
     if (!boat.recording || !live) return;
     const id = navigator.geolocation.watchPosition(
@@ -458,44 +530,6 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
           </button>
         </div>
         <p className="mt-3 text-sm text-muted">Still your call at the dock.</p>
-        <div className="mt-3 grid grid-cols-3 gap-2" role="tablist" aria-label="Departure">
-          {(
-            [
-              ["now", "Now"],
-              ["plus6", "+6h"],
-              ["tomorrow", "Tomorrow"],
-            ] as const
-          ).map(([id, label]) => {
-            const when = slotTime(id, now);
-            const sea = conditions ? nearRow(conditions.marineHourly, when) : null;
-            const wind = conditions ? nearRow(conditions.weatherHourly, when) : null;
-            const limited = id !== "now" && (sea?.waveFt == null || wind?.windMph == null);
-            const tideFlow = conditions ? currentAt(conditions.current, when) : null;
-            const ebb = tideFlow?.stage === "ebb" && (sea?.waveFt ?? buoy?.waveFt ?? 0) >= boat.maxSeasFt - 0.5;
-            return (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={slot === id}
-                disabled={limited}
-                onClick={() => setSlot(id)}
-                className={cn("min-h-12 rounded-md border px-2 py-1 text-left text-xs", slot === id ? "border-accent bg-surface-2" : "border-line")}
-              >
-                <span className="block text-sm font-medium text-fg">{label}</span>
-                <span className="block text-muted">
-                  {limited
-                    ? "Forecast limited"
-                    : id === "now"
-                      ? `${buoy ? `${buoy.waveFt.toFixed(1)} ft` : "seas n/a"} · ${windMph != null ? `${Math.round(windMph)} mph` : "wind n/a"}`
-                      : `${sea?.waveFt?.toFixed(1) ?? "—"} ft · ${sea?.wavePeriodS ? `${Math.round(sea.wavePeriodS)} s` : "period n/a"} · ${wind?.windMph != null ? `${Math.round(wind.windMph)} mph` : "—"}`}
-                  {ebb ? " · ebb×swell" : ""}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {slot !== "now" && slotLimited ? <p className="mt-2 text-sm text-muted">Forecast limited. No number was invented for that hour.</p> : null}
         {conditionsStale ? (
           <p className="mt-2 text-sm text-fair" role="status">
             Last conditions for this inlet · {conditionsAge} · {freshness(cachedConditions?.at)}
@@ -572,13 +606,6 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
         )}
       </section>
 
-      <section className={cn("rounded-xl border border-line p-4", mode !== "leave" && "hidden")}>
-        <p className="text-xs font-medium tracking-wide text-subtle uppercase">Ready for sea</p>
-        <p className="mt-2 text-sm text-fg">
-          Brief {briefFresh} · Conditions {conditions ? freshness(inletQuery.data ? new Date().toISOString() : cachedConditions?.at) : "missing"} · Gate {checking ? "missing" : usingCache && cachedForInlet ? freshness(cachedForInlet.at) : inletQuery.data ? "good" : "missing"} · Tiles {tiles > 0 ? `${tiles} saved` : "none"}
-        </p>
-        {tiles === 0 ? <p className="mt-2 text-sm text-muted">Save tiles for home area from the chart before you lose signal.</p> : null}
-      </section>
       <Fold title="Pre-launch checklist" meta={`${checksDone}/${CHECKLIST_ITEMS.length}`} defaultOpen className={mode !== "leave" ? "hidden" : undefined}>
         <ul className="mt-1 flex flex-col gap-1">
           {CHECKLIST_ITEMS.map((item) => {
@@ -675,7 +702,7 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
           <button
             type="button"
             className="h-12 rounded-md bg-surface-2 px-3 text-sm text-fg"
-            onClick={() => downloadText("fairwater.gpx", toGpx(boat.waypoints, boat.track), "application/gpx+xml")}
+            onClick={() => downloadText("necuze-on.gpx", toGpx(boat.waypoints, boat.track), "application/gpx+xml")}
           >
             Download GPX
           </button>
@@ -799,7 +826,7 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
         <button
           type="button"
           className="mt-2 h-12 rounded-md bg-surface-2 px-3 text-sm text-fg"
-          onClick={() => downloadText("fairwater-catches.csv", catchesCsv(boat.catches), "text/csv")}
+          onClick={() => downloadText("necuze-on-catches.csv", catchesCsv(boat.catches), "text/csv")}
         >
           Download CSV
         </button>
