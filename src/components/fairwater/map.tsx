@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { LayerGroup, Map as LeafletMap, TileLayer } from "leaflet";
+import { Ellipsis } from "lucide-react";
+import type { LayerGroup, Map as LeafletMap, Renderer, TileLayer } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { bearing, miles } from "@/lib/marine/geo";
 import { groundById, groundsIn } from "@/lib/marine/grounds";
@@ -35,6 +36,9 @@ const FILL: Record<Band, string> = {
   nearshore: "#1d4e89",
   offshore: "#3d4c7c",
 };
+
+/** Depth numbers / channel markers — match UI copy that gates below z12. */
+const DEPTH_OVERLAY_MIN_ZOOM = 12;
 
 type Props = {
   region: RegionId | "all";
@@ -155,6 +159,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
   const chartRef = useRef<TileLayer | null>(null);
   const baseRef = useRef<TileLayer | null>(null);
   const overlayRef = useRef<TileLayer | null>(null);
+  const canvasRef = useRef<Renderer | null>(null);
   const viewRef = useRef(chartView);
   viewRef.current = chartView;
   const selectRef = useRef(onSelect);
@@ -169,8 +174,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
   const [saveNote, setSaveNote] = useState<string | null>(null);
   const [measure, setMeasure] = useState<string | null>(null);
   const [draftOn, setDraftOn] = useState(false);
-  const [advisoriesOpen, setAdvisoriesOpen] = useState(false);
-  const [advisoryLines, setAdvisoryLines] = useState<string[]>([]);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const waypoints = useBoat((s) => s.waypoints);
   const track = useBoat((s) => s.track);
   const markMode = useBoat((s) => s.markMode);
@@ -197,6 +201,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
     if (!el) return;
     let alive = true;
     let map: LeafletMap | null = null;
+    let zoomSettleTimer: number | undefined;
 
     (async () => {
       const leaflet = await import("leaflet");
@@ -258,6 +263,11 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
           const canvas = document.createElement("canvas");
           canvas.width = 256;
           canvas.height = 256;
+          // Skip WMS + keepSoundings below the depth-number threshold — empty tile until zoom settles at z12+.
+          if (coords.z < DEPTH_OVERLAY_MIN_ZOOM) {
+            done(undefined, canvas);
+            return canvas;
+          }
           void (async () => {
             try {
               const depthBlob = await fetchOverlay(wmsUrl("2", coords.x, coords.y, coords.z));
@@ -286,11 +296,41 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
         },
       });
       const OverlayLayer = Overlay as new (options: Record<string, unknown>) => TileLayer;
-      overlayRef.current = new OverlayLayer({ maxZoom: 18, attribution: "NOAA" });
+      // updateWhenIdle: paint heavy depth tiles only after zoom/pan settles (no mid-gesture redraw).
+      overlayRef.current = new OverlayLayer({
+        maxZoom: 18,
+        minZoom: DEPTH_OVERLAY_MIN_ZOOM,
+        updateWhenIdle: true,
+        updateWhenZooming: false,
+        attribution: "NOAA",
+      });
+      canvasRef.current = L.canvas({ padding: 0.5 });
       groupRef.current = L.layerGroup().addTo(map);
       navRef.current = L.layerGroup().addTo(map);
+      map.on("zoomstart", () => {
+        if (zoomSettleTimer) window.clearTimeout(zoomSettleTimer);
+        const live = mapRef.current;
+        const overlay = overlayRef.current;
+        // Hide heavy overlay mid-gesture so keepSoundings work does not run during pinch/zoom.
+        if (live && overlay && live.hasLayer(overlay)) live.removeLayer(overlay);
+      });
       map.on("zoomend", () => {
-        if (map) setZoom(map.getZoom());
+        if (!map) return;
+        const z = map.getZoom();
+        setZoom(z);
+        if (zoomSettleTimer) window.clearTimeout(zoomSettleTimer);
+        zoomSettleTimer = window.setTimeout(() => {
+          const overlay = overlayRef.current;
+          if (!overlay || !mapRef.current) return;
+          const view = viewRef.current;
+          const wantsOverlay = view === "hybrid" || view === "fishing";
+          if (wantsOverlay && z >= DEPTH_OVERLAY_MIN_ZOOM) {
+            if (!mapRef.current.hasLayer(overlay)) overlay.addTo(mapRef.current);
+            else overlay.redraw();
+          } else if (mapRef.current.hasLayer(overlay)) {
+            mapRef.current.removeLayer(overlay);
+          }
+        }, 120);
       });
       mapRef.current = map;
       map.invalidateSize();
@@ -308,6 +348,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
 
     return () => {
       alive = false;
+      if (zoomSettleTimer) window.clearTimeout(zoomSettleTimer);
       map?.remove();
       mapRef.current = null;
       groupRef.current = null;
@@ -315,6 +356,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
       chartRef.current = null;
       baseRef.current = null;
       overlayRef.current = null;
+      canvasRef.current = null;
       setBooted(false);
     };
     // The chart should open on the inlet already selected, then stay put while the user pans.
@@ -329,6 +371,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
       const L = leaflet.default;
       if (cancelled || !groupRef.current) return;
       groupRef.current.clearLayers();
+      const renderer = canvasRef.current ?? undefined;
       for (const ground of groundsIn(region, band)) {
         const selected = ground.id === selectedId;
         const marker = L.circleMarker([ground.lat, ground.lng], {
@@ -337,6 +380,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
           weight: 2,
           fillColor: selected ? "#f4f1e8" : FILL[ground.band],
           fillOpacity: 1,
+          renderer,
         });
         marker.on("click", (event) => {
           L.DomEvent.stopPropagation(event);
@@ -399,6 +443,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
       if (cancelled || !navRef.current) return;
       const L = leaflet.default;
       navRef.current.clearLayers();
+      const renderer = canvasRef.current ?? undefined;
       if (region === "outer-banks") {
         L.polyline(STATE_LINE, { color: "#8a6844", weight: 2, dashArray: "6 6" })
           .bindTooltip("Approximate 3 nm state line. Inside is state water, outside is federal. Not a legal boundary.", {
@@ -425,17 +470,18 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
           weight: 2,
           fillColor: "#d4b483",
           fillOpacity: 1,
+          renderer,
         })
           .bindTooltip(mark.name, { permanent: true, direction: "top", className: "fw-label" })
           .addTo(navRef.current);
       }
       const inlet = inletById(activeInletId);
       const home = marinaById(homeMarinaId);
-      L.circleMarker([inlet.lat, inlet.lng], { radius: 8, color: "#8a3030", weight: 2, fillColor: "#d9897b", fillOpacity: 1 })
+      L.circleMarker([inlet.lat, inlet.lng], { radius: 8, color: "#8a3030", weight: 2, fillColor: "#d9897b", fillOpacity: 1, renderer })
         .bindTooltip(inlet.name, { permanent: true, direction: "right", className: "fw-label" })
         .addTo(navRef.current);
       if (home) {
-        L.circleMarker([home.lat, home.lng], { radius: 8, color: "#102028", weight: 2, fillColor: "#f4f1e8", fillOpacity: 1 })
+        L.circleMarker([home.lat, home.lng], { radius: 8, color: "#102028", weight: 2, fillColor: "#f4f1e8", fillOpacity: 1, renderer })
           .bindTooltip(home.name, { permanent: true, direction: "left", className: "fw-label" })
           .addTo(navRef.current);
       }
@@ -465,14 +511,6 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
     };
   }, [booted, region, track, waypoints, activeInletId, homeMarinaId, showRings, helmMode, cruiseKt, burnGph, tankGal, reservePct, chartView, draftOn, shoalDepthFt, draftFt]);
 
-  useEffect(() => {
-    const onList = (event: Event) => {
-      const detail = (event as CustomEvent<string[]>).detail;
-      setAdvisoryLines(Array.isArray(detail) ? detail : []);
-    };
-    window.addEventListener("fairwater-advisories", onList);
-    return () => window.removeEventListener("fairwater-advisories", onList);
-  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -492,8 +530,13 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
       if (map.hasLayer(overlay)) map.removeLayer(overlay);
     } else {
       if (map.hasLayer(chart)) map.removeLayer(chart);
-      if (!map.hasLayer(overlay)) overlay.addTo(map);
-      overlay.redraw();
+      // Heavy depth overlay only at z12+ and after idle — aligns with depth-number UI copy.
+      if (map.getZoom() >= DEPTH_OVERLAY_MIN_ZOOM) {
+        if (!map.hasLayer(overlay)) overlay.addTo(map);
+        overlay.redraw();
+      } else if (map.hasLayer(overlay)) {
+        map.removeLayer(overlay);
+      }
     }
     if (groupRef.current) {
       groupRef.current.remove();
@@ -548,6 +591,8 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
       return;
     }
     setSaveNote("Saving this view…");
+    window.dispatchEvent(new CustomEvent("fairwater-tiles", { detail: { pct: 0, count: 0 } }));
+    let done = 0;
     for (const coord of coords) {
       await cacheUrl(base.getTileUrl(coord as never));
       if (view === "chart") await cacheUrl(layer.getTileUrl(coord as never));
@@ -555,9 +600,14 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
         await cacheUrl(wmsUrl("2", coord.x, coord.y, coord.z));
         await cacheUrl(wmsUrl("1,3,4,6,7", coord.x, coord.y, coord.z));
       }
+      done += 1;
+      const pct = Math.round((done / coords.length) * 100);
+      window.dispatchEvent(new CustomEvent("fairwater-tiles", { detail: { pct, count: done } }));
+      setSaveNote(`Saving this view… ${pct}%`);
     }
     const keys = await caches.open("fairwater-charts").then((cache) => cache.keys());
     setSavedTiles(keys.length);
+    window.dispatchEvent(new CustomEvent("fairwater-tiles", { detail: { pct: null, count: keys.length } }));
     setSaveNote(`${keys.length} tiles saved for this view. Water you have not opened is not on the phone.`);
   }
 
@@ -579,44 +629,124 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
   return (
     <div className="relative h-full w-full touch-none">
       <div ref={host} className="fairwater-map h-full w-full" />
-      <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={showCoast}
-          className="h-12 rounded-md border border-line bg-surface px-3 text-sm font-medium text-fg"
-        >
-          Whole coast
-        </button>
-        <button
-          type="button"
-          onClick={() => void saveView()}
-          className="h-12 rounded-md border border-line bg-surface px-3 text-sm font-medium text-fg"
-        >
-          Save view
-        </button>
+      <div className="absolute top-3 left-3 z-[1000] flex max-w-[min(100%-1.5rem,18rem)] flex-col items-start gap-2">
+        {/* Phone: Run chips (Mark/Record) + one Tools overflow. Desktop: quiet overlays stay visible. */}
         {helmMode === "run" ? (
-          <>
-            <button type="button" onClick={() => toggleMark()} className={`h-12 rounded-md border border-line px-3 text-sm font-medium ${markMode ? "bg-accent text-accent-fg" : "bg-surface text-fg"}`}>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => toggleMark()}
+              className={`h-11 rounded-md border border-line px-3 text-sm font-medium ${markMode ? "bg-accent text-accent-fg" : "bg-surface/95 text-fg"}`}
+            >
               {markMode ? "Marking" : "Mark"}
             </button>
-            <button type="button" onClick={() => setRecording(!recording)} className={`h-12 rounded-md border border-line px-3 text-sm font-medium ${recording ? "bg-poor text-bg" : "bg-surface text-fg"}`}>
+            <button
+              type="button"
+              onClick={() => setRecording(!recording)}
+              className={`h-11 rounded-md border border-line px-3 text-sm font-medium ${recording ? "bg-poor text-bg" : "bg-surface/95 text-fg"}`}
+            >
               {recording ? "Stop" : "Record"}
             </button>
-            <button type="button" onClick={() => useBoat.getState().toggleRings()} className="h-12 rounded-md border border-line bg-surface px-3 text-sm font-medium text-fg">
+          </div>
+        ) : null}
+
+        {/* Phone / tablet: single overflow control */}
+        <div className="relative lg:hidden">
+          <button
+            type="button"
+            onClick={() => setToolsOpen((open) => !open)}
+            aria-expanded={toolsOpen}
+            aria-label="Map tools"
+            className="flex h-11 items-center gap-1.5 rounded-md border border-line bg-surface/95 px-3 text-sm font-medium text-fg"
+          >
+            <Ellipsis className="size-4" aria-hidden />
+            Tools
+          </button>
+          {toolsOpen ? (
+            <div className="absolute top-full left-0 mt-1 flex min-w-[11rem] flex-col gap-1 rounded-lg border border-line bg-surface p-1 shadow-none">
+              <button
+                type="button"
+                onClick={() => {
+                  showCoast();
+                  setToolsOpen(false);
+                }}
+                className="h-11 rounded-md px-3 text-left text-sm font-medium text-fg hover:bg-surface-2"
+              >
+                Whole coast
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void saveView();
+                  setToolsOpen(false);
+                }}
+                className="h-11 rounded-md px-3 text-left text-sm font-medium text-fg hover:bg-surface-2"
+              >
+                Save view
+              </button>
+              {helmMode === "run" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    useBoat.getState().toggleRings();
+                    setToolsOpen(false);
+                  }}
+                  className="h-11 rounded-md px-3 text-left text-sm font-medium text-fg hover:bg-surface-2"
+                >
+                  {showRings ? "Hide rings" : "Range rings"}
+                </button>
+              ) : null}
+              {chartView === "hybrid" || chartView === "fishing" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraftOn((on) => !on);
+                    setToolsOpen(false);
+                  }}
+                  className="h-11 rounded-md px-3 text-left text-sm font-medium text-fg hover:bg-surface-2"
+                >
+                  {draftOn ? "Hide draft danger" : "Draft danger"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        {/* Desktop: quiet map overlays (no tall stack on phone) */}
+        <div className="hidden flex-col gap-2 lg:flex">
+          <button
+            type="button"
+            onClick={showCoast}
+            className="h-11 rounded-md border border-line bg-surface/95 px-3 text-sm font-medium text-fg"
+          >
+            Whole coast
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveView()}
+            className="h-11 rounded-md border border-line bg-surface/95 px-3 text-sm font-medium text-fg"
+          >
+            Save view
+          </button>
+          {helmMode === "run" ? (
+            <button
+              type="button"
+              onClick={() => useBoat.getState().toggleRings()}
+              className="h-11 rounded-md border border-line bg-surface/95 px-3 text-sm font-medium text-fg"
+            >
               {showRings ? "Hide rings" : "Range rings"}
             </button>
-            {advisoryLines.length ? (
-              <button type="button" onClick={() => setAdvisoriesOpen((open) => !open)} className="h-12 rounded-md border border-line bg-surface px-3 text-sm font-medium text-fg">
-                {advisoryLines.length} advisories
-              </button>
-            ) : null}
-          </>
-        ) : null}
-        {chartView === "hybrid" || chartView === "fishing" ? (
-          <button type="button" onClick={() => setDraftOn((on) => !on)} className="h-12 rounded-md border border-line bg-surface px-3 text-sm font-medium text-fg">
-            {draftOn ? "Hide draft danger" : "Draft danger"}
-          </button>
-        ) : null}
+          ) : null}
+          {chartView === "hybrid" || chartView === "fishing" ? (
+            <button
+              type="button"
+              onClick={() => setDraftOn((on) => !on)}
+              className="h-11 rounded-md border border-line bg-surface/95 px-3 text-sm font-medium text-fg"
+            >
+              {draftOn ? "Hide draft danger" : "Draft danger"}
+            </button>
+          ) : null}
+        </div>
       </div>
       {saveNote ? (
         <p className="absolute right-3 bottom-7 z-[1000] max-w-[16rem] rounded-md bg-surface/95 px-2 py-1 text-xs text-muted">
@@ -636,18 +766,11 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
           {measure}
         </p>
       ) : null}
-      {advisoriesOpen && advisoryLines.length ? (
-        <ul className="absolute top-3 right-3 z-[1000] max-w-[16rem] rounded-md bg-surface/95 p-2 text-sm text-fg">
-          {advisoryLines.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
-      ) : null}
       {chartView === "satellite" ? (
         <p className="absolute bottom-7 left-3 z-[1000] max-w-[16rem] rounded-md bg-surface/95 px-2 py-1 text-xs text-muted">
           Photo only. No depths and no buoys on this view.
         </p>
-      ) : zoom < 12 ? (
+      ) : zoom < DEPTH_OVERLAY_MIN_ZOOM ? (
         <p className="absolute bottom-7 left-3 z-[1000] max-w-[16rem] rounded-md bg-surface/95 px-2 py-1 text-xs text-muted">
           Zoom in for depth numbers and the red and green channel markers.
         </p>

@@ -3,7 +3,7 @@ import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import appCss from "../styles.css?url";
 
-const APP_NAME = "Fairwater";
+const APP_NAME = "Necuze On";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -11,7 +11,7 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: APP_NAME },
-      { name: "description", content: "A simple fishing chart for tides, swell, current, moon, and seasonal grounds." },
+      { name: "description", content: "Boat fishing charts for tides, swell, current, moon, and seasonal grounds." },
       { name: "theme-color", content: "#07131a" },
     ],
     links: [

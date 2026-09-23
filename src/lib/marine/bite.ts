@@ -122,7 +122,7 @@ function observedWave(
   exposure: Exposure,
 ): { ft: number; id: string } | null {
   const buoy = conditions.buoy;
-  if (!buoy || exposure === "protected") return null;
+  if (!buoy || buoy.waveFt == null || exposure === "protected") return null;
   if (buoy.ageMin > 180 || buoy.distanceMi > 80) return null;
   if (Math.abs(when.getTime() - Date.now()) > 3 * 3600000) return null;
   return { ft: buoy.waveFt, id: buoy.id };

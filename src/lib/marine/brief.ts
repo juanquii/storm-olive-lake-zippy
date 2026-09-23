@@ -26,7 +26,7 @@ export type MarineBrief = {
   errors: string[];
 };
 
-const UA = "Fairwater/1.0 (NC fishing chart)";
+const UA = "NecuzeOn/1.0 (NC boat fishing)";
 const DMF =
   "https://www.deq.nc.gov/about/divisions/marine-fisheries/rules-proclamations-and-size-and-bag-limits/fisheries-management-proclamations";
 const PA =

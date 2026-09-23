@@ -95,7 +95,7 @@ export const getConditions = createServerFn({ method: "GET" })
       time_zone: "gmt",
       units: "english",
       format: "json",
-      application: "Fairwater",
+      application: "NecuzeOn",
     };
 
     const hourlyTide = new URL(tideUrl);
@@ -246,7 +246,7 @@ async function loadCurrent(lat: number, lng: number): Promise<CurrentBundle | nu
     url.searchParams.set("time_zone", "gmt");
     url.searchParams.set("units", "english");
     url.searchParams.set("format", "json");
-    url.searchParams.set("application", "Fairwater");
+    url.searchParams.set("application", "NecuzeOn");
     const res = await pull(url);
     if (!res.ok) return null;
     const events = parseCurrentEvents(res.json);
@@ -344,10 +344,11 @@ async function loadBuoy(lat: number, lng: number): Promise<BuoyObs | null> {
       .filter((row) => row.distanceMi <= 90)
       .sort((a, b) => a.distanceMi - b.distanceMi)
       .slice(0, 4);
+    let windOnly: BuoyObs | null = null;
     for (const row of ranked) {
       const obs = await buoyObs(row.item.id);
       if (!obs) continue;
-      return {
+      const full: BuoyObs = {
         ...obs,
         id: row.item.id,
         name: row.item.name,
@@ -355,8 +356,10 @@ async function loadBuoy(lat: number, lng: number): Promise<BuoyObs | null> {
         lng: row.item.lng,
         distanceMi: Math.round(row.distanceMi),
       };
+      if (obs.waveFt != null) return full;
+      if (!windOnly && obs.windMph != null) windOnly = full;
     }
-    return null;
+    return windOnly;
   } catch {
     return null;
   }
@@ -413,7 +416,9 @@ function parseBuoy(text: string): Omit<BuoyObs, "id" | "name" | "distanceMi" | "
     if (line.startsWith("#")) continue;
     const p = line.split(/\s+/);
     const wave = metric(p[iWave]);
-    if (wave == null) continue;
+    const windMph = msToMph(metric(p[iWind]));
+    // Keep wind-only rows when WVHT is MM so live wind can still surface.
+    if (wave == null && windMph == null) continue;
     const year = Number(p[iYear]);
     const month = Number(p[iMonth]);
     const day = Number(p[iDay]);
@@ -425,10 +430,10 @@ function parseBuoy(text: string): Omit<BuoyObs, "id" | "name" | "distanceMi" | "
     if (ageMin > 6 * 60) continue;
     return {
       ageMin,
-      waveFt: wave * 3.28084,
-      wavePeriodS: metric(p[iPeriod]),
-      waveDir: metric(p[iDir]),
-      windMph: msToMph(metric(p[iWind])),
+      waveFt: wave == null ? null : wave * 3.28084,
+      wavePeriodS: wave == null ? null : metric(p[iPeriod]),
+      waveDir: wave == null ? null : metric(p[iDir]),
+      windMph,
       gustMph: msToMph(metric(p[iGust])),
       windDir: metric(p[iWindDir]),
     };

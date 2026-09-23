@@ -17,7 +17,7 @@ export type CatchLog = {
 
 /** Sportsman Open 262 · twin ~F200 · ~22" draft · ~150–182 gal usable tank. */
 export const SPORTSMAN_262 = {
-  boatLabel: "Sportsman Open 262",
+  boatLabel: "Sportsman Open 262 CC",
   draftFt: 1.83,
   cruiseKt: 28,
   burnGph: 15,
@@ -27,6 +27,20 @@ export const SPORTSMAN_262 = {
   maxSeasFt: 3.5,
   minPeriodS: 6,
   maxWindMph: 18,
+} as const;
+
+/** 38′ Silverton ACMY · draft 4′2″ max (38C manual) · 360 gal · published diesel cruise ~22.9 kt / ~34 gph. */
+export const SILVERTON_38_ACMY = {
+  boatLabel: "38′ Silverton ACMY",
+  draftFt: 4.17,
+  tankGal: 360,
+  cruiseKt: 23,
+  burnGph: 34,
+  planningBurnGph: 39,
+  reservePct: 25,
+  maxSeasFt: 5,
+  minPeriodS: 6,
+  maxWindMph: 22,
 } as const;
 
 /** One-way offshore planning leg (nm). planFuelNm doubles this for round-trip. Juan: 40 out / 80 RT. */
@@ -42,7 +56,7 @@ export const CHECKLIST_ITEMS: { id: string; label: string }[] = [
   { id: "vhf", label: "VHF radio check + channels 16/22A" },
   { id: "safety", label: "PFDs, throwables, flares, first aid" },
   { id: "kill", label: "Kill-switch lanyard + engine pre-start" },
-  { id: "phone", label: "Phone charged · Fairwater offline tiles saved" },
+  { id: "phone", label: "Phone charged · Necuze On offline tiles saved" },
 ];
 
 type RuleKeys =
@@ -80,6 +94,7 @@ type BoatState = {
   nightHelm: boolean;
   setRule: (patch: Partial<Pick<BoatState, RuleKeys>>) => void;
   applySportsman262: () => void;
+  applySilverton38Acmy: () => void;
   setHomeMarina: (id: MarinaId | null) => void;
   setActiveInlet: (id: InletId) => void;
   setPlanningBurn: (gph: number) => void;
@@ -162,6 +177,26 @@ export function planFuelNm(
   };
 }
 
+
+/** Plain judgment from draft + maxSeasFt + burn — ICW / nearshore / offshore fit chips. */
+export function boatBandFit(draftFt: number, maxSeasFt: number, burnGph: number) {
+  const draftIn = Math.round(draftFt * 12);
+  const draftLabel = `~${draftFt.toFixed(1)} ft (${draftIn}″)`;
+  const icw =
+    draftFt < 2.5
+      ? `ICW / inshore · ${draftLabel} OK — shallow draft freer`
+      : `ICW / inshore · ${draftLabel} constrained / watch soundings`;
+  const nearshore =
+    maxSeasFt < 4
+      ? `Nearshore · usable · mind seas (~${maxSeasFt} ft limit)`
+      : `Nearshore · usable · roomier seas (~${maxSeasFt} ft)`;
+  const offshore =
+    burnGph <= 20 || maxSeasFt <= 4
+      ? `Offshore · lighter seas limit (~${maxSeasFt} ft)`
+      : `Offshore · seas ~${maxSeasFt} ft · larger fuel but higher burn (${burnGph} gph)`;
+  return { icw, nearshore, offshore };
+}
+
 export function routeFuel(
   marks: { lat: number; lng: number }[],
   cruiseKt: number,
@@ -208,6 +243,7 @@ export const useBoat = create<BoatState>()(
       nightHelm: false,
       setRule: (patch) => set(patch),
       applySportsman262: () => set({ ...SPORTSMAN_262 }),
+      applySilverton38Acmy: () => set({ ...SILVERTON_38_ACMY }),
       setHomeMarina: (homeMarinaId) => set({ homeMarinaId }),
       setActiveInlet: (activeInletId) => set({ activeInletId }),
       setPlanningBurn: (planningBurnGph) => set({ planningBurnGph }),

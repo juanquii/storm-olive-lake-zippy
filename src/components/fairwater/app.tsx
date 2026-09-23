@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LocateFixed, Moon, Search, Sun, X } from "lucide-react";
+import { formatHitLabel, searchFairwater, type SearchHit } from "@/lib/marine/search";
 import { FishingMap } from "@/components/fairwater/map";
 import { ConditionsPanel } from "@/components/fairwater/panel";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { BAND_BLURB, BAND_LABEL, GROUNDS, REGIONS, groundById, groundsIn } from 
 import { miles, nearest } from "@/lib/marine/geo";
 import { inletById, marinaById } from "@/lib/marine/inlets";
 import type { Band, RegionId } from "@/lib/marine/types";
-import { OFFSHORE_ONE_WAY_NM, planFuelNm, useBoat } from "@/store/boat";
+import { OFFSHORE_ONE_WAY_NM, boatBandFit, planFuelNm, SILVERTON_38_ACMY, SPORTSMAN_262, useBoat } from "@/store/boat";
 import { useTrip, type ChartView } from "@/store/trip";
 import { cn } from "@/lib/cn";
 
@@ -26,7 +27,7 @@ const LAYOUT_KEY = "fairwater-layout";
 function readLayout(): { panelPx: number; sheet: "peek" | "open"; tools: boolean } {
   try {
     const raw = localStorage.getItem(LAYOUT_KEY);
-    if (!raw) return { panelPx: 448, sheet: "open", tools: false };
+    if (!raw) return { panelPx: 448, sheet: "peek", tools: false };
     const parsed = JSON.parse(raw) as { panelPx?: unknown; sheet?: unknown; tools?: unknown };
     const panelPx = Number(parsed.panelPx);
     return {
@@ -35,7 +36,7 @@ function readLayout(): { panelPx: number; sheet: "peek" | "open"; tools: boolean
       tools: parsed.tools === true,
     };
   } catch {
-    return { panelPx: 448, sheet: "open", tools: false };
+    return { panelPx: 448, sheet: "peek", tools: false };
   }
 }
 
@@ -65,12 +66,20 @@ function Fairwater() {
   const [geoNote, setGeoNote] = useState<string | null>(null);
   const [live, setLive] = useState(false);
   const [panelPx, setPanelPx] = useState(448);
-  const [sheet, setSheet] = useState<"peek" | "open">("open");
+  const [sheet, setSheet] = useState<"peek" | "open">("peek");
   const [toolsOpen, setToolsOpen] = useState(false);
   const [layoutReady, setLayoutReady] = useState(false);
   const [gateLabel, setGateLabel] = useState<string | null>(null);
   const [fuelLabel, setFuelLabel] = useState<string | null>(null);
   const [biteLabel, setBiteLabel] = useState<string | null>(null);
+  const [readyInfo, setReadyInfo] = useState<{ ready: boolean; line: string } | null>(null);
+  const [tilePct, setTilePct] = useState<number | null>(null);
+  const [slot, setSlot] = useState<"now" | "plus6" | "tomorrow">("now");
+  const [slotOptions, setSlotOptions] = useState<
+    { id: "now" | "plus6" | "tomorrow"; label: string; summary: string; limited: boolean }[]
+  >([]);
+  const [advisoryLines, setAdvisoryLines] = useState<string[]>([]);
+  const [advisoriesOpen, setAdvisoriesOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const nightHelm = useBoat((s) => s.nightHelm);
   const setNightHelm = useBoat((s) => s.setNightHelm);
@@ -80,6 +89,26 @@ function Fairwater() {
   const reservePct = useBoat((s) => s.reservePct);
   const homeMarinaId = useBoat((s) => s.homeMarinaId);
   const activeInletId = useBoat((s) => s.activeInletId);
+  const boatLabel = useBoat((s) => s.boatLabel);
+  const draftFt = useBoat((s) => s.draftFt);
+  const maxSeasFt = useBoat((s) => s.maxSeasFt);
+  const applySportsman262 = useBoat((s) => s.applySportsman262);
+  const applySilverton38Acmy = useBoat((s) => s.applySilverton38Acmy);
+  const [boatFlash, setBoatFlash] = useState(false);
+  const boatFlashTimer = useRef<number | null>(null);
+
+  function applyBoatPreset(apply: () => void) {
+    apply();
+    setBoatFlash(true);
+    if (boatFlashTimer.current != null) window.clearTimeout(boatFlashTimer.current);
+    boatFlashTimer.current = window.setTimeout(() => setBoatFlash(false), 900);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (boatFlashTimer.current != null) window.clearTimeout(boatFlashTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     void useBoat.persist.rehydrate();
@@ -117,29 +146,54 @@ function Fairwater() {
     const onGate = (event: Event) => setGateLabel(String((event as CustomEvent).detail));
     const onFuel = (event: Event) => setFuelLabel(String((event as CustomEvent).detail));
     const onBite = (event: Event) => setBiteLabel(String((event as CustomEvent).detail));
+    const onReady = (event: Event) => {
+      const detail = (event as CustomEvent<{ ready: boolean; line: string }>).detail;
+      if (detail && typeof detail.ready === "boolean") setReadyInfo(detail);
+    };
+    const onSlots = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        slot: "now" | "plus6" | "tomorrow";
+        options: { id: "now" | "plus6" | "tomorrow"; label: string; summary: string; limited: boolean }[];
+      }>).detail;
+      if (!detail) return;
+      setSlot(detail.slot);
+      setSlotOptions(Array.isArray(detail.options) ? detail.options : []);
+    };
+    const onAdvisories = (event: Event) => {
+      const detail = (event as CustomEvent<string[]>).detail;
+      setAdvisoryLines(Array.isArray(detail) ? detail : []);
+    };
+    const onTiles = (event: Event) => {
+      const detail = (event as CustomEvent<{ pct?: number | null; count?: number }>).detail;
+      setTilePct(detail?.pct == null ? null : detail.pct);
+    };
     window.addEventListener("fairwater-gate", onGate);
     window.addEventListener("fairwater-fuel", onFuel);
     window.addEventListener("fairwater-bite", onBite);
+    window.addEventListener("fairwater-ready", onReady);
+    window.addEventListener("fairwater-slots", onSlots);
+    window.addEventListener("fairwater-advisories", onAdvisories);
+    window.addEventListener("fairwater-tiles", onTiles);
     return () => {
       window.removeEventListener("fairwater-gate", onGate);
       window.removeEventListener("fairwater-fuel", onFuel);
       window.removeEventListener("fairwater-bite", onBite);
+      window.removeEventListener("fairwater-ready", onReady);
+      window.removeEventListener("fairwater-slots", onSlots);
+      window.removeEventListener("fairwater-advisories", onAdvisories);
+      window.removeEventListener("fairwater-tiles", onTiles);
     };
   }, []);
 
   useEffect(() => {
     panelRef.current?.scrollTo({ top: 0 });
-  }, [helmMode]);
+  }, [helmMode, sheet]);
 
   const month = live ? new Date().getMonth() + 1 : 0;
-  const hits = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (q.length < 2) return [];
-    return GROUNDS.filter((g) => {
-      const hay = `${g.name} ${g.region} ${g.band} ${g.species.map((s) => s.name).join(" ")}`.toLowerCase();
-      return hay.includes(q);
-    }).slice(0, 7);
-  }, [query]);
+  const hits = useMemo(
+    () => searchFairwater(query, { region, month, limit: 10 }),
+    [query, region, month],
+  );
 
   function dragPanel(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault();
@@ -162,6 +216,45 @@ function Fairwater() {
     setGround(id);
     setQuery("");
     setGeoNote(null);
+  }
+
+  function openRegs() {
+    setHelmMode("fish");
+    setSheet("open");
+    setQuery("");
+    setGeoNote(null);
+    window.setTimeout(() => {
+      window.dispatchEvent(new Event("fairwater-open-regs"));
+    }, 80);
+  }
+
+  function chooseHit(hit: SearchHit) {
+    if (hit.kind === "regs") {
+      openRegs();
+      return;
+    }
+    choose(hit.groundId, hit.region);
+    if (hit.kind === "species" || hit.kind === "season") {
+      setHelmMode("fish");
+      setSheet("open");
+    }
+  }
+
+  function chooseBand(b: Band) {
+    const next = band === b ? "all" : b;
+    setBand(next);
+    if (next === "all") return;
+    const current = GROUNDS.find((g) => g.id === groundId);
+    if (!current || current.band !== next) {
+      const pick = groundsIn(region, next)[0];
+      if (pick) setGround(pick.id);
+    }
+  }
+
+  /** Map-first: Leave / Run / Fish all default to peek so the chart keeps majority height. */
+  function setMode(id: "leave" | "run" | "fish") {
+    setHelmMode(id);
+    setSheet("peek");
   }
 
   function nearMe() {
@@ -188,29 +281,28 @@ function Fairwater() {
   const home = marinaById(homeMarinaId);
   const inlet = inletById(activeInletId);
   const fuelPlan = planFuelNm(OFFSHORE_ONE_WAY_NM, cruiseKt, burnGph, tankGal, reservePct);
+  const nmPerGal = burnGph > 0 ? cruiseKt / burnGph : 0;
+  const bandFit = boatBandFit(draftFt, maxSeasFt, burnGph);
   const homeNm = home ? miles(inlet.lat, inlet.lng, home.lat, home.lng) * 0.868976 : null;
   const homeMin = homeNm == null ? null : (homeNm / Math.max(cruiseKt, 1)) * 60;
 
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-bg text-fg">
       <header className="border-b border-line">
-        <div className="flex items-baseline justify-between px-3 pt-3 sm:hidden">
-          <p className="font-display text-xl leading-none tracking-tight">Fairwater</p>
-          <p className="text-xs text-muted">Fishing chart</p>
-        </div>
         <div className="flex items-center gap-2 px-3 py-2 lg:gap-3 lg:px-4">
         <div className="hidden shrink-0 sm:block">
-          <p className="font-display text-xl leading-none tracking-tight">Fairwater</p>
-          <p className="text-xs text-muted">Fishing chart</p>
+          <p className="font-display text-xl leading-none tracking-tight">Necuze On</p>
+          <p className="text-xs text-muted">Boat fishing</p>
         </div>
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search grounds or fish"
-            aria-label="Search grounds or fish"
+            placeholder="Search fish, grounds, regs, season"
+            aria-label="Search fish, grounds, regs, season"
             className="pr-12 pl-9"
+            autoComplete="off"
           />
           {query ? (
             <button
@@ -223,16 +315,16 @@ function Fairwater() {
             </button>
           ) : null}
           {hits.length ? (
-            <ul className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-line bg-surface shadow-none">
-              {hits.map((g) => (
-                <li key={g.id}>
+            <ul className="absolute z-30 mt-1 max-h-[min(24rem,55vh)] w-full overflow-y-auto rounded-lg border border-line bg-surface shadow-none">
+              {hits.map((hit) => (
+                <li key={hit.id}>
                   <button
                     type="button"
-                    className="flex min-h-12 w-full items-center justify-between gap-3 px-3 text-left text-sm hover:bg-surface-2"
-                    onClick={() => choose(g.id, g.region)}
+                    className="flex min-h-11 w-full flex-col items-start justify-center gap-0.5 px-3 py-2 text-left hover:bg-surface-2"
+                    onClick={() => chooseHit(hit)}
                   >
-                    <span className="truncate text-fg">{g.name}</span>
-                    <span className="shrink-0 text-muted">{BAND_LABEL[g.band]}</span>
+                    <span className="w-full truncate text-sm font-medium text-fg">{formatHitLabel(hit)}</span>
+                    <span className="w-full truncate text-xs text-muted">{hit.detail}</span>
                   </button>
                 </li>
               ))}
@@ -247,16 +339,32 @@ function Fairwater() {
           onClick={() => setNightHelm(!nightHelm)}
           aria-label={nightHelm ? "Day UI" : "Night helm UI"}
           aria-pressed={nightHelm}
+          className="hidden sm:inline-flex"
         >
           {nightHelm ? <Sun className="size-4" /> : <Moon className="size-4" />}
           <span className="hidden md:inline">{nightHelm ? "Day" : "Night"}</span>
         </Button>
-        <Button variant="quiet" onClick={nearMe} aria-label="Use my location">
+        <Button variant="quiet" onClick={nearMe} aria-label="Use my location" className="hidden sm:inline-flex">
           <LocateFixed className="size-4" />
           <span className="hidden md:inline">Near me</span>
         </Button>
         </div>
       </header>
+
+      {readyInfo ? (
+        <p
+          className={cn(
+            "border-b border-line px-3 py-1.5 text-xs sm:px-4 sm:text-sm",
+            readyInfo.ready ? "text-good" : "text-fair",
+          )}
+          role="status"
+        >
+          <span className="font-medium">{readyInfo.ready ? "Ready for sea" : "Not ready"}</span>
+          {" · "}
+          {readyInfo.line}
+          {tilePct != null ? ` · Download ${tilePct}%` : ""}
+        </p>
+      ) : null}
 
       {toolsOpen ? (
         <div className="fixed inset-0 z-[1200] flex flex-col bg-bg lg:hidden">
@@ -296,16 +404,7 @@ function Fairwater() {
                 <button
                   key={b}
                   type="button"
-                  onClick={() => {
-                    const next = band === b ? "all" : b;
-                    setBand(next);
-                    if (next === "all") return;
-                    const current = GROUNDS.find((g) => g.id === groundId);
-                    if (!current || current.band !== next) {
-                      const pick = groundsIn(region, next)[0];
-                      if (pick) setGround(pick.id);
-                    }
-                  }}
+                  onClick={() => chooseBand(b)}
                   className={cn("h-12 rounded-md border px-3 text-left text-sm", band === b ? "border-accent bg-surface-2" : "border-line")}
                 >
                   {BAND_LABEL[b]}
@@ -329,6 +428,25 @@ function Fairwater() {
                 </button>
               ))}
               <p className="text-sm text-muted">{CHART_VIEWS.find((view) => view.id === chartView)?.note}</p>
+            </div>
+            <div className="flex flex-col gap-2 border-t border-line px-3 py-2 sm:hidden">
+              <button
+                type="button"
+                onClick={() => setNightHelm(!nightHelm)}
+                className="h-12 rounded-md bg-surface-2 px-3 text-left text-sm font-medium text-fg"
+              >
+                {nightHelm ? "Day UI" : "Night helm"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  nearMe();
+                  setToolsOpen(false);
+                }}
+                className="h-12 rounded-md bg-surface-2 px-3 text-left text-sm font-medium text-fg"
+              >
+                Near me
+              </button>
             </div>
           </div>
         </div>
@@ -361,6 +479,7 @@ function Fairwater() {
 
       {geoNote ? <p className="border-b border-line px-4 py-2 text-sm text-muted">{geoNote}</p> : null}
 
+      {/* Desktop helm */}
       <div className="hidden grid-cols-3 gap-2 border-b border-line px-3 py-2 lg:grid" role="tablist" aria-label="Helm mode">
         {(
           [
@@ -374,10 +493,7 @@ function Fairwater() {
             type="button"
             role="tab"
             aria-selected={helmMode === id}
-            onClick={() => {
-              setHelmMode(id);
-              setSheet(id === "run" ? "peek" : "open");
-            }}
+            onClick={() => setMode(id)}
             className={cn(
               "h-12 rounded-md text-sm font-medium",
               helmMode === id ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted",
@@ -388,55 +504,51 @@ function Fairwater() {
         ))}
       </div>
 
-      <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="hidden grid-cols-3 gap-2 border-b border-line px-3 py-2 lg:grid">
-            {(["inshore", "nearshore", "offshore"] as const).map((b) => (
-              <button
-                key={b}
-                type="button"
-                onClick={() => {
-                  const next = band === b ? "all" : b;
-                  setBand(next);
-                  if (next === "all") return;
-                  const current = GROUNDS.find((g) => g.id === groundId);
-                  if (!current || current.band !== next) {
-                    const pick = groundsIn(region, next)[0];
-                    if (pick) setGround(pick.id);
-                  }
-                }}
-                className={cn(
-                  "min-h-12 rounded-lg border px-2 py-1.5 text-left",
-                  band === b ? "border-accent bg-surface-2" : "border-line bg-bg",
-                )}
-              >
-                <span className="block text-xs font-medium tracking-wide text-subtle uppercase">{BAND_LABEL[b]}</span>
-                <span className="block truncate text-sm text-fg">
-                  {live && month ? seasonNames(region, b, month) : BAND_BLURB[b]}
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="hidden gap-2 overflow-x-auto border-b border-line px-3 py-2 lg:flex" role="tablist" aria-label="Map view">
-            {CHART_VIEWS.map((view) => (
-              <button
-                key={view.id}
-                type="button"
-                role="tab"
-                aria-selected={chartView === view.id}
-                onClick={() => setChartView(view.id)}
-                className={cn(
-                  "h-12 shrink-0 rounded-md px-3 text-sm font-medium",
-                  chartView === view.id ? "bg-accent text-accent-fg" : "text-muted hover:bg-surface-2",
-                )}
-              >
-                {view.label}
-              </button>
-            ))}
-          </div>
-          <p className="hidden border-b border-line px-3 py-1.5 text-xs text-muted lg:block">
-            {CHART_VIEWS.find((view) => view.id === chartView)?.note}
-          </p>
+      {/* Tablet: Leave/Run/Fish + bands in one row */}
+      <div className="hidden items-center gap-2 overflow-x-auto border-b border-line px-3 py-2 sm:max-lg:flex">
+        <div className="flex shrink-0 gap-1" role="tablist" aria-label="Helm mode">
+          {(
+            [
+              ["leave", "Leave"],
+              ["run", "Run"],
+              ["fish", "Fish"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={helmMode === id}
+              onClick={() => setMode(id)}
+              className={cn(
+                "h-12 rounded-md px-3 text-sm font-medium",
+                helmMode === id ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="mx-1 h-8 w-px shrink-0 bg-line" aria-hidden />
+        <div className="flex min-w-0 flex-1 gap-1">
+          {(["inshore", "nearshore", "offshore"] as const).map((b) => (
+            <button
+              key={b}
+              type="button"
+              onClick={() => chooseBand(b)}
+              className={cn(
+                "h-12 min-w-0 flex-1 truncate rounded-md border px-2 text-sm font-medium",
+                band === b ? "border-accent bg-surface-2 text-fg" : "border-line text-muted",
+              )}
+            >
+              {BAND_LABEL[b]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="relative flex min-h-0 flex-1 flex-col sm:flex-row">
+        <div className="flex min-h-[52%] flex-1 flex-col sm:min-h-0 sm:w-[60%] sm:flex-none lg:w-auto lg:flex-1">
           <div className="relative min-h-[160px] min-w-0 flex-1">
             <FishingMap
               region={region}
@@ -450,12 +562,139 @@ function Fairwater() {
               }}
             />
           </div>
-          {helmMode === "run" ? (
-            <p className="border-t border-line px-3 py-2 text-sm text-fg">
-              Advisory · {homeNm == null ? "No home marina" : `Home ${homeNm.toFixed(1)} nm · ${Math.round(homeMin ?? 0)} min`} · Fuel RT {fuelPlan.gallons.toFixed(0)} gal · {fuelPlan.home ? "HOME OK" : "GO HOME"}
-            </p>
+          {/* Leave peek: Now / +6h / Tomorrow — map-first chrome, not a panel */}
+          {helmMode === "leave" ? (
+            <div
+              className={cn(
+                "grid grid-cols-3 gap-1 border-t border-line px-2 py-1.5",
+                sheet !== "peek" && "max-sm:hidden",
+              )}
+              role="tablist"
+              aria-label="Departure"
+            >
+              {(slotOptions.length
+                ? slotOptions
+                : (
+                    [
+                      { id: "now" as const, label: "Now", summary: "—", limited: false },
+                      { id: "plus6" as const, label: "+6h", summary: "—", limited: true },
+                      { id: "tomorrow" as const, label: "Tomorrow", summary: "—", limited: true },
+                    ]
+                  )
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={slot === opt.id}
+                  disabled={opt.limited}
+                  onClick={() => {
+                    setSlot(opt.id);
+                    window.dispatchEvent(new CustomEvent("fairwater-set-slot", { detail: opt.id }));
+                  }}
+                  className={cn(
+                    "min-h-11 rounded-md border px-1.5 py-1 text-left",
+                    slot === opt.id ? "border-accent bg-surface-2" : "border-line bg-bg",
+                    opt.limited && "opacity-50",
+                  )}
+                >
+                  <span className="block text-xs font-medium text-fg sm:text-sm">{opt.label}</span>
+                  <span className="block truncate text-[10px] text-muted sm:text-xs">{opt.summary}</span>
+                </button>
+              ))}
+            </div>
           ) : null}
-          <p className="border-t border-line px-3 py-1.5 text-xs text-muted">
+          {/* Leave peek: boat preset + live summary / band fit — Leave only */}
+          {helmMode === "leave" ? (
+            <div
+              className={cn(
+                "border-t border-line px-2 py-1",
+                sheet !== "peek" && "max-sm:hidden",
+              )}
+              role="group"
+              aria-label="Boat preset"
+            >
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  aria-pressed={boatLabel === SPORTSMAN_262.boatLabel || boatLabel === "Sportsman Open 262"}
+                  onClick={() => applyBoatPreset(applySportsman262)}
+                  className={cn(
+                    "min-h-9 rounded-md border px-1.5 text-xs font-medium sm:text-sm",
+                    boatLabel === SPORTSMAN_262.boatLabel || boatLabel === "Sportsman Open 262"
+                      ? "border-accent bg-surface-2 text-fg"
+                      : "border-line bg-bg text-muted",
+                  )}
+                >
+                  Sportsman 262
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={boatLabel === SILVERTON_38_ACMY.boatLabel}
+                  onClick={() => applyBoatPreset(applySilverton38Acmy)}
+                  className={cn(
+                    "min-h-9 rounded-md border px-1.5 text-xs font-medium sm:text-sm",
+                    boatLabel === SILVERTON_38_ACMY.boatLabel
+                      ? "border-accent bg-surface-2 text-fg"
+                      : "border-line bg-bg text-muted",
+                  )}
+                >
+                  38′ Silverton ACMY
+                </button>
+              </div>
+              <div
+                className={cn(
+                  "mt-1 rounded-md px-1.5 py-1 transition-colors",
+                  boatFlash ? "bg-accent/20 ring-1 ring-accent" : "bg-transparent",
+                )}
+                aria-live="polite"
+              >
+                <p className="text-[10px] leading-snug text-fg sm:text-xs">
+                  <span className="font-medium">{boatLabel}</span>
+                  {" · draft "}
+                  {draftFt.toFixed(2)} ft (~{Math.round(draftFt * 12)}″)
+                  {" · tank "}
+                  {tankGal} gal · cruise {cruiseKt} kt · burn {burnGph} gph
+                  {" · ~"}
+                  {nmPerGal.toFixed(1)} nm/gal · 40 out / {fuelPlan.nm.toFixed(0)} RT ~{fuelPlan.gallons.toFixed(0)} gal
+                  {fuelPlan.home ? " · HOME OK" : " · GO HOME"}
+                </p>
+                <ul className="mt-0.5 flex flex-col gap-0.5 text-[10px] leading-snug text-muted sm:text-xs">
+                  <li>{bandFit.icw}</li>
+                  <li>{bandFit.nearshore}</li>
+                  <li>{bandFit.offshore}</li>
+                </ul>
+              </div>
+            </div>
+          ) : null}
+          {/* Thin edge strip: SOG · home nm · fuel · advisories chip */}
+          <div className="flex items-center gap-2 border-t border-line px-3 py-1 text-xs tabular-nums text-fg sm:py-1.5 sm:text-sm">
+            <p className="min-w-0 flex-1 truncate">
+              {cruiseKt.toFixed(0)} kt · {homeNm == null ? "No home marina" : `Home ${homeNm.toFixed(1)} nm`}
+              {homeMin != null ? ` · ${Math.round(homeMin)} min` : ""} · Fuel RT {fuelPlan.gallons.toFixed(0)} gal ·{" "}
+              {fuelPlan.home ? "HOME OK" : "GO HOME"}
+            </p>
+            {advisoryLines.length ? (
+              <button
+                type="button"
+                className="h-8 shrink-0 rounded-md border border-line bg-surface-2 px-2 text-xs font-medium text-fg"
+                aria-expanded={advisoriesOpen}
+                onClick={() => setAdvisoriesOpen((open) => !open)}
+              >
+                {advisoryLines.length} advisories
+              </button>
+            ) : null}
+          </div>
+          {advisoriesOpen && advisoryLines.length ? (
+            <ul className="border-t border-line bg-surface px-3 py-2 text-xs text-fg sm:text-sm">
+              {advisoryLines.map((line) => (
+                <li key={line} className="py-0.5">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="hidden border-t border-line px-3 py-1.5 text-xs text-muted sm:block">
             Advisory only — not a chartplotter. Confirm with NOAA charts / Coast Pilot / your eyes.
           </p>
         </div>
@@ -479,13 +718,19 @@ function Fairwater() {
           style={{ "--panel": `${panelPx}px` } as CSSProperties}
           className={cn(
             "flex min-h-0 flex-col border-line bg-bg",
-            sheet === "open" ? "max-lg:max-h-[46vh] max-lg:flex-none max-lg:border-t" : "max-lg:shrink-0 max-lg:border-t",
-            "lg:h-auto lg:w-[var(--panel)] lg:flex-none lg:border-l",
+            // Phone: bottom sheet — cap open height so map keeps majority (never a tiny strip)
+            sheet === "open"
+              ? "max-sm:max-h-[36vh] max-sm:flex-none max-sm:border-t"
+              : "max-sm:shrink-0 max-sm:border-t",
+            // Tablet: side sheet ~40%, map stays ≥ half
+            "sm:h-auto sm:w-[40%] sm:flex-none sm:border-l sm:border-t-0",
+            // Desktop: resizable panel width
+            "lg:w-[var(--panel)]",
           )}
         >
           <button
             type="button"
-            className="flex min-h-16 w-full flex-col items-center justify-center px-4 py-2 lg:hidden"
+            className="flex min-h-14 w-full flex-col items-center justify-center px-4 py-1.5 sm:hidden"
             aria-expanded={sheet === "open"}
             onClick={() => setSheet((value) => (value === "open" ? "peek" : "open"))}
           >
@@ -494,17 +739,57 @@ function Fairwater() {
               <span className="truncate text-sm font-medium text-fg">{gateLabel ?? groundById(groundId).name}</span>
               <span className="shrink-0 text-sm text-muted">{sheet === "open" ? "Show chart" : "Open"}</span>
             </span>
-            <span className="mt-1 w-full truncate text-left text-xs text-muted">
+            <span className="mt-0.5 w-full truncate text-left text-xs text-muted">
               {fuelLabel ?? "Fuel"} · {biteLabel ?? "Bite"}
             </span>
           </button>
-          <div ref={panelRef} className={cn("min-h-0 flex-1 overflow-y-auto", sheet === "peek" && "max-lg:hidden")}>
+          {/* Desktop: bands + chart chips live in the panel, not above the map */}
+          <div className="hidden border-b border-line px-3 py-2 lg:block">
+            <div className="grid grid-cols-3 gap-2">
+              {(["inshore", "nearshore", "offshore"] as const).map((b) => (
+                <button
+                  key={b}
+                  type="button"
+                  onClick={() => chooseBand(b)}
+                  className={cn(
+                    "min-h-12 rounded-lg border px-2 py-1.5 text-left",
+                    band === b ? "border-accent bg-surface-2" : "border-line bg-bg",
+                  )}
+                >
+                  <span className="block text-xs font-medium tracking-wide text-subtle uppercase">{BAND_LABEL[b]}</span>
+                  <span className="block truncate text-sm text-fg">
+                    {live && month ? seasonNames(region, b, month) : BAND_BLURB[b]}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 flex gap-2 overflow-x-auto" role="tablist" aria-label="Map view">
+              {CHART_VIEWS.map((view) => (
+                <button
+                  key={view.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={chartView === view.id}
+                  onClick={() => setChartView(view.id)}
+                  className={cn(
+                    "h-12 shrink-0 rounded-md px-3 text-sm font-medium",
+                    chartView === view.id ? "bg-accent text-accent-fg" : "text-muted hover:bg-surface-2",
+                  )}
+                >
+                  {view.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-muted">{CHART_VIEWS.find((view) => view.id === chartView)?.note}</p>
+          </div>
+          <div ref={panelRef} className={cn("min-h-0 flex-1 overflow-y-auto", sheet === "peek" && "max-sm:hidden")}>
             <ConditionsPanel />
           </div>
         </aside>
       </div>
+      {/* Phone helm — Leave / Run / Fish */}
       <nav
-        className="grid shrink-0 grid-cols-3 gap-2 border-t border-line bg-bg px-3 py-2 lg:hidden"
+        className="grid shrink-0 grid-cols-3 gap-2 border-t border-line bg-bg px-3 py-2 sm:hidden"
         style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
         aria-label="Helm mode"
       >
@@ -519,10 +804,7 @@ function Fairwater() {
             key={id}
             type="button"
             aria-selected={helmMode === id}
-            onClick={() => {
-              setHelmMode(id);
-              setSheet(id === "run" ? "peek" : "open");
-            }}
+            onClick={() => setMode(id)}
             className={cn(
               "h-12 rounded-md text-sm font-medium",
               helmMode === id ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted",
