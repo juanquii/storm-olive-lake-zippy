@@ -1,0 +1,165 @@
+# Fairwater masterpiece regression review — 2026-09-23
+
+Reviewed `/workspace/user-upload-inspect` against `FAIRWATER-MASTERPIECE-GROK-BUILD-BRIEF-V2-NO-GAPS.md` and `CHANGELOG-masterpiece.md`. Scope: stores, marine libs, fairwater UI, changelog. `tsc --noEmit` confirms a single error (known).
+
+---
+
+## Blockers
+
+1. **`app.tsx` ~L84 — typecheck fails on `rehydrate().then`**
+   - `useTrip.persist.rehydrate()` is typed `void | Promise<void>`; calling `.then` is `TS2339`.
+   - Also races layout: sync `readLayout()` / `setSheet(saved.sheet)` runs immediately, then async rehydrate can force `sheet` to `"open"` when `helmMode === "leave"`, clobbering a saved peek preference.
+
+2. **`gpx.ts` `escapeXml` is a no-op (broken GPX 1.1)**
+   - Body is literally `.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">")` — does not emit `&amp;` / `&lt;` / `&gt;`.
+   - Waypoint names with `&`, `<`, or `>` produce invalid / unsafe GPX. Epic F acceptance (“GPX opens in a second tool”) fails for non-trivial names.
+
+---
+
+## Major
+
+1. **Run mode + mobile peek: Mark / Record unreachable**
+   - Brief §3.2 wants map overlay chips for Mark · Record in Run.
+   - `map.tsx` only overlays Whole coast / Save view / Range rings. Mark/Record live in `cruise.tsx` “Route and fuel” fold.
+   - On mobile Run, `app.tsx` sets `sheet` to `"peek"` and hides panel body (`max-lg:hidden`). Operator cannot drop marks or start track without opening the sheet — core Run UX gap.
+
+2. **`fairwater-gate-last` written, never read**
+   - Epic D: airplane Leave should show last gate + brief with stale badge.
+   - Brief/conditions caches are read; gate cache is write-only (`cruise.tsx`). Offline with mismatched inlet / empty conditions cache recomputes gate from nulls (always caution), not the last stored gate.
+
+3. **Shellfish closures still Beaufort-centric**
+   - `brief.ts` `loadClosures` keeps only `carteret|onslow`. Southern inlets (Cape Fear, Lockwoods, Little River / Myrtle) never surface relevant Brunswick / New Hanover / Horry closures.
+   - Multi-inlet Leave/Fish trust regresses south of Bogue.
+
+4. **Checklist hard-codes AMZ158**
+   - `boat.ts` `CHECKLIST_ITEMS` nws label: `"NWS coastal waters (AMZ158) read"`.
+   - Inlet switch updates zone in NWS fold, but checklist stays Beaufort-only wording.
+
+5. **Fish mode: no explicit “best window” / “Legal to keep?” chip**
+   - Bite score + reasons exist; `bestWindow` feeds `fishingRead` only — no dedicated best-window control above the fold.
+   - Always-on “Check regs” link + calendar caveat present, but no amber per-species / uncertain “Legal to keep?” chip as brief §3.3 / Epic E require.
+
+6. **Epic G buoy/tile 8s timeout → retry not implemented as specified**
+   - Conditions/brief use 12–20s `AbortSignal.timeout`; geolocation uses 8s.
+   - No dedicated buoy race timeout with map-level retry. Inlet has “Retry feeds” only when `isError && !conditions`.
+
+---
+
+## Minor
+
+1. **Gate copy vs brief**: UI says “Under your limits” instead of “GO”; gate card uses border tint, not 56px color-fill block (§3.1).
+
+2. **Home marina cannot be cleared to `null`**: select `value={boat.homeMarinaId ?? "70-west"}` always picks a marina; brief allows `null`.
+
+3. **Coral Bay coords**: code `34.7, -76.767` vs brief `~34.72, -76.70` (acceptable but not the seed).
+
+4. **DMF / catch empty states**: proclamations list renders nothing when empty (no “None loaded”); catch fold meta says Empty but list is blank — weak empty UX.
+
+5. **Saved grounds tap targets**: `panel.tsx` saved rows use `h-11` (44px); rest of helm uses `h-12` / `min-h-12`.
+
+6. **Double `useBoat.persist.rehydrate()`** in `app.tsx` and `cruise.tsx` — redundant, possible flicker.
+
+7. **`OFFSHORE_RT_NM` alias equals one-way** (`boat.ts`) — deprecated correctly but easy to misuse if old call sites return.
+
+8. **Night helm**: CSS meets brief (near-black, amber accents, tile dim). Gate semantic colors remapped under wash — still distinct enough; no further issue.
+
+9. **Peek line defaults**: shows `"Fuel" · "Bite"` until custom events fire; brief expects gate+fuel+bite — OK after first CruiseBoard/panel paint, blank-ish on cold start.
+
+10. **Inlet change always forces `setRegion("outer-banks")`** even if user was browsing another coast — surprising but ops-aligned.
+
+---
+
+## Brief acceptance checklist (pass/fail)
+
+### Product / math / migrate
+| Item | Result |
+| --- | --- |
+| Do not scaffold; extend existing | **PASS** (changelog + tree) |
+| Sportsman 262 defaults present | **PASS** |
+| Legacy migrate forces 262 on tank 40 / draft 1.5 / burn 8 or 24 | **PASS** (`migrateBoat` + `tankGal == null`) |
+| `planFuelNm` doubles one-way (40→80); hand math ~2.86h · ~43gal · usable 127.5 · HOME OK | **PASS** |
+| Closed waypoint loop does **not** double (`routeFuel` ≤0.05 nm) | **PASS** |
+| Trip migrate no longer forces `beaufort-inlet` every bump | **PASS** (`state.groundId \|\| "beaufort-inlet"`) |
+| Leave / Run / Fish `helmMode` wired (tabs → panel + map rings) | **PASS** (with Run-peek Mark gap above) |
+| Disclaimers exact: map / gate / sandbar | **PASS** |
+| chartOn removed or wired | **PASS** (gone) |
+| Typecheck clean | **FAIL** (`app.tsx` L84) |
+
+### Epic A — Multi-inlet + home
+| Item | Result |
+| --- | --- |
+| `inlets.ts` + marinas seed | **PASS** |
+| Inlet switch retargets title / station / gate / brief zone | **PASS** |
+| Home pin + Run Home ETA | **PASS** |
+| No sole hard-coded Beaufort `INLET` constant | **PASS** |
+| Residual Beaufort-only (checklist AMZ158, closures counties) | **FAIL** (partial) |
+
+### Epic B — Fuel rings
+| Item | Result |
+| --- | --- |
+| Labels `40 nm out · 80 nm RT` | **PASS** |
+| Rings in Run; toggleable | **PASS** |
+| Closed loop honesty | **PASS** |
+
+### Epic C — Sandbar
+| Item | Result |
+| --- | --- |
+| `shoal.ts` logic + unknown when depth/tide missing | **PASS** |
+| Disclaimer always visible | **PASS** |
+
+### Epic D — Offline
+| Item | Result |
+| --- | --- |
+| Brief + conditions last-good + freshness badge | **PASS** (partial; brief freshness when live uses “now”) |
+| Gate last-good restore | **FAIL** (write-only) |
+| Save tiles CTA when none cached | **PASS** (`Save tiles for home area`) |
+
+### Epic E — Fish + grounds
+| Item | Result |
+| --- | --- |
+| Southern grounds (Radio Island, Cape Fear approaches, Lockwoods, Little River, Myrtle AR) | **PASS** |
+| Regs link + “month ≠ season” | **PASS** |
+| Amber uncertain / Legal-to-keep chip | **FAIL** / weak |
+
+### Epic F — Export + boat card
+| Item | Result |
+| --- | --- |
+| GPX 1.1 + CSV header | **FAIL** GPX escape; CSV **PASS** |
+| Catch edit/delete | **PASS** |
+| Reset 262 → `applySportsman262` | **PASS** |
+
+### Epic G — Polish
+| Item | Result |
+| --- | --- |
+| Modes Leave/Run/Fish | **PASS** |
+| Mobile peek gate+fuel+bite | **PASS** (after events) |
+| Buoy 8s → retry | **FAIL** / incomplete |
+| Screenshots `masterpiece-*` × desktop/mobile × 4 | **PASS** (8 files) |
+
+---
+
+## Suggested fix order (file + 1-line fix)
+
+1. `src/components/fairwater/app.tsx` — `await Promise.resolve(useTrip.persist.rehydrate())` (or `void` + separate effect); apply leave→open sheet only if no saved layout yet.
+2. `src/lib/marine/gpx.ts` — fix `escapeXml` to replace with `&amp;`, `&lt;`, `&gt;` (and quotes if needed).
+3. `src/components/fairwater/map.tsx` — add Run-mode Mark / Record overlay buttons calling `toggleMark` / `setRecording` (same as cruise fold).
+4. `src/components/fairwater/cruise.tsx` — read `fairwater-gate-last` when live gate inputs missing; show stale gate + age badge.
+5. `src/lib/marine/brief.ts` — expand closure county filter by inlet/zone (or include Brunswick/New Hanover/Horry for southern ops).
+6. `src/store/boat.ts` — checklist NWS item label from active inlet zone (or generic “NWS coastal waters read”).
+7. `src/components/fairwater/panel.tsx` — surface best-window times; amber “Check regs / Legal to keep?” chip when season uncertain.
+8. `src/lib/marine/conditions.ts` (+ UI) — 8s buoy budget with explicit retry control per Epic G.
+9. `src/components/fairwater/cruise.tsx` — allow clearing home marina (`null`); empty state for DMF list.
+10. `src/components/fairwater/panel.tsx` — bump Saved row to `min-h-12` for tap targets.
+
+---
+
+## Verified OK (do not re-break)
+
+- `planFuelNm`: `nmOneWay * 2`; changelog fuel check matches code.
+- `routeFuel`: closed if first/last ≤ 0.05 nm → no ×2.
+- Boat migrate v3 forces Sportsman 262 on legacy fingerprints.
+- Trip migrate v4 preserves user `groundId`.
+- Inlet-aware gate reasons + AMZ158 gale special-case kept.
+- All three permanent disclaimer strings present verbatim.
+- Screenshots present as changelog claims.
+

@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-sans: "Source Sans 3", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-bg: #07131a;
+  --color-surface: #0d1c26;
+  --color-surface-2: #132833;
+  --color-fg: #e7eef2;
+  --color-muted: #8ea3b0;
+  --color-subtle: #5e7584;
+  --color-line: #1e3442;
+  --color-accent: #d5e2e8;
+  --color-accent-fg: #07131a;
+  --color-inshore: #6eaea0;
+  --color-nearshore: #7ea4c4;
+  --color-offshore: #9aa3c4;
+  --color-good: #8fbfa8;
+  --color-fair: #d4b483;
+  --color-poor: #d9897b;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+}
+
+.fairwater-map,
+.leaflet-container,
+.leaflet-pane,
+.leaflet-tile-pane {
+  touch-action: none;
+}
+
+.fairwater-map img {
+  max-width: none !important;
+  max-height: none !important;
+}
+
+.leaflet-container {
+  background: var(--color-bg);
+  font-family: var(--font-sans);
+  height: 100%;
+  width: 100%;
+  touch-action: none;
+}
+
+.leaflet-bar {
+  border: 1px solid var(--color-line) !important;
+  box-shadow: none !important;
+}
+
+.leaflet-bar a {
+  background: var(--color-surface);
+  color: var(--color-fg);
+  border-bottom-color: var(--color-line);
+  width: 48px;
+  height: 48px;
+  line-height: 48px;
+  font-size: 20px;
+}
+
+.leaflet-bar a:hover {
+  background: var(--color-surface-2);
+}
+
+.leaflet-control-attribution {
+  background: color-mix(in oklab, var(--color-bg) 80%, transparent) !important;
+  color: var(--color-subtle) !important;
+  font-size: 11px;
+}
+
+.leaflet-control-attribution a {
+  color: var(--color-muted);
+}
+
+.leaflet-tooltip.fw-label {
+  background: var(--color-surface);
+  color: var(--color-fg);
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  box-shadow: none;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 2px 8px;
+}
+
+.leaflet-tooltip-pane {
+  z-index: 650;
+}
+
+.recharts-default-tooltip {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-line) !important;
+  border-radius: 12px !important;
+  color: var(--color-fg) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fairwater-map,
+  .leaflet-fade-anim .leaflet-tile,
+  .leaflet-zoom-anim .leaflet-zoom-animated {
+    transition: none !important;
+  }
+}
+
+
+/* Helm night mode: red-amber low glare for after dark at the wheel. */
+html.night-helm {
+  --color-bg: #050808;
+  --color-surface: #0c1010;
+  --color-surface-2: #141a14;
+  --color-fg: #e8c9a8;
+  --color-muted: #b08968;
+  --color-subtle: #7a5a40;
+  --color-line: #2a1c12;
+  --color-accent: #d9894b;
+  --color-accent-fg: #140c08;
+  --color-inshore: #a87850;
+  --color-nearshore: #c09060;
+  --color-offshore: #d4a878;
+  --color-good: #b89a5a;
+  --color-fair: #d4a050;
+  --color-poor: #e07050;
+  color-scheme: dark;
+}
+
+html.night-helm .leaflet-tile-pane {
+  opacity: 0.84;
+}

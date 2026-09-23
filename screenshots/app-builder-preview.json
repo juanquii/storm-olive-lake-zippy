@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Fairwater",
+      "hasCanvas": false,
+      "bodyTextLen": 1216,
+      "bodyTextHash": "340a6e6d32ac237a6a973d95b4cfd976ec69c889cc6db0f3ace85f442c668ad3",
+      "bodyTextPrefix": "Fairwater Fishing chart Near me NOAA chart North Carolina Chesap",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Fairwater",
+      "hasCanvas": false,
+      "bodyTextLen": 1651,
+      "bodyTextHash": "ae421e57a8b0f4bab45f00de7a6516e13fff45b4dda38a22844c754cb7781018",
+      "bodyTextPrefix": "Fairwater Fishing chart Chart North Carolina Chesapeake Southeas",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}

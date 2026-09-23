@@ -1,0 +1,275 @@
+# Fairwater Masterpiece — NO-GAP Spec for Grok Build Beta
+**Version:** 2 (gap-proof) · 2026-09-23 ET  
+**Use with:** the uploaded Fairwater/fairview zip **plus** this file. Do not rebuild from scratch.
+
+## Critical instruction to Grok Build
+1. **Open the existing repo** (`fairview` folder; product name **Fairwater**).
+2. **Do not scaffold a new app.** Extend files listed below.
+3. **Do not regress** Sportsman 262 preset, checklist, night helm, brief cache, or 40-out/80-RT fuel math.
+4. Ship Epics **A → G in order**. Do not jump to AIS/social/auth.
+5. After each epic, run typecheck and the acceptance tests for that epic before starting the next.
+
+---
+
+# PART 1 — Product contract (non-negotiable)
+
+## 1.1 User
+Juan Necuze · Sportsman Open 262 · twin ~F200 · draft ~22″ (1.83 ft) · tank ~150–182 gal (default 170) · home **70 West Marina** and/or **Coral Bay Marina** (NC) · ops Atlantic NC–Myrtle Beach · planning leg **40 nm one-way / 80 nm round-trip**.
+
+## 1.2 Modes (must implement)
+Replace the current “everything in one sheet” mental model with three modes:
+
+| Mode | Purpose | Must show above the fold (mobile) |
+| --- | --- | --- |
+| **Leave** | Go / no-go | Inlet selector · Gate (GO/CAUTION/NO-GO) · Checklist progress · NWS stale badge |
+| **Run** | Underway | Map · Fuel out/RT + GO HOME · Range rings · Marks/track controls · Night helm |
+| **Fish** | Target | Bite score · Best window · Species in season · “Legal to keep?” chip · Grounds list |
+
+Desktop: left/right split OK (map + panel) but mode switch still required.
+
+## 1.3 Permanent disclaimers (copy exact)
+- Map footer: `Advisory only — not a chartplotter. Confirm with NOAA charts / Coast Pilot / your eyes.`
+- Gate footer: `Still your call at the dock.`
+- Sandbar advisory: `Depth advisory only — not a clearance guarantee.`
+
+## 1.4 Defaults that must exist after migrate
+```
+boatLabel: "Sportsman Open 262"
+draftFt: 1.83
+cruiseKt: 28
+burnGph: 15          // cruise planning burn
+planningBurnGph: 18  // NEW optional uplift for rough seas (default 18)
+tankGal: 170
+reservePct: 25
+maxSeasFt: 3.5
+minPeriodS: 6
+maxWindMph: 18
+offshoreOneWayNm: 40
+homeMarinaId: "70-west" | "coral-bay" | null
+activeInletId: "beaufort" (until user changes)
+nightHelm: boolean
+```
+Legacy migrate: if `tankGal===40 || draftFt===1.5 || burnGph===8 || burnGph===24` → force Sportsman 262 block above.
+
+---
+
+# PART 2 — Data schemas (implement exactly)
+
+## 2.1 New file: `src/lib/marine/inlets.ts`
+```ts
+export type InletId =
+  | "beaufort"
+  | "bogue"
+  | "masonboro"
+  | "cape-fear"
+  | "lockwoods-folly"
+  | "little-river";
+
+export type Inlet = {
+  id: InletId;
+  name: string;           // UI title, e.g. "Beaufort / Fort Macon"
+  lat: number;
+  lng: number;
+  stationId: string;      // NOAA CO-OPS
+  stationName: string;
+  nwsZoneHint: string;    // e.g. "AMZ158" or human label if zone unknown
+  notes: string;          // one line hazard note
+};
+
+export type MarinaId = "70-west" | "coral-bay" | "sloop-point";
+
+export type Marina = {
+  id: MarinaId;
+  name: string;
+  lat: number;
+  lng: number;
+  defaultInletId: InletId;
+};
+```
+
+**Seed data (use these coordinates; refine only if a cited source is better):**
+| id | name | lat | lng | stationId | stationName | default notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| beaufort | Beaufort / Fort Macon | 34.68 | -76.66 | 8656483 | Beaufort, Duke Marine Lab | Ebb against swell is the rough one |
+| bogue | Bogue Inlet | 34.65 | -77.10 | nearest CO-OPS to point | (label nearest) | Shifting bar — local knowledge |
+| masonboro | Masonboro Inlet | 34.18 | -77.81 | nearest | nearest | Traffic + swell on ebb |
+| cape-fear | Cape Fear approaches | 33.89 | -78.01 | nearest | nearest | Shipping + shoals |
+| lockwoods-folly | Lockwoods Folly | 33.92 | -78.23 | nearest | nearest | Thin water inside |
+| little-river | Little River / Myrtle approaches | 33.85 | -78.55 | nearest | nearest | ICW traffic |
+
+Marinas:
+| id | name | lat | lng | defaultInletId |
+| --- | --- | --- | --- | --- |
+| 70-west | 70 West Marina | ~34.72 | -76.73 | beaufort |
+| coral-bay | Coral Bay Marina | ~34.72 | -76.70 | beaufort |
+| sloop-point | Sloop Point Marina | ~34.40 | -77.60 | masonboro |
+
+Export: `INLETS`, `MARINAS`, `inletById()`, `marinaById()`.
+
+## 2.2 Extend `src/store/boat.ts`
+Add fields + actions:
+```ts
+planningBurnGph: number
+homeMarinaId: MarinaId | null
+activeInletId: InletId
+setHomeMarina(id: MarinaId): void
+setActiveInlet(id: InletId): void
+setPlanningBurn(gph: number): void
+```
+Keep `planFuelNm(oneWayNm, cruiseKt, burnGph, tankGal, reservePct)` semantics: **doubles one-way**.  
+UI must label: `40 nm out · ${offshore.nm} nm RT`.
+
+**routeFuel fix:** If first and last waypoint are within ~0.05 nm, treat path as already round-trip → **do not ×2**.
+
+## 2.3 New: sandbar advisory helper `src/lib/marine/shoal.ts`
+```ts
+export function shoalAdvisory(opts: {
+  draftFt: number;
+  marginFt: number;      // default 1.0
+  depthFtMllw: number | null; // user-entered or curated pin depth
+  tideFtMllw: number | null;  // from CO-OPS at time
+}): { level: "ok" | "thin" | "risk" | "unknown"; reason: string }
+```
+Logic:
+- If depth or tide null → `unknown`
+- `water = depthFtMllw + tideFtMllw`
+- need = draftFt + marginFt
+- water >= need + 0.5 → ok
+- water >= need → thin
+- else risk
+
+## 2.4 Offline cache keys
+| key | contents |
+| --- | --- |
+| `fairwater-brief-last` | already exists — keep |
+| `fairwater-conditions-last` | NEW: full conditions payload + groundId + at ISO |
+| `fairwater-gate-last` | NEW: { inletId, gate, reasons, at } |
+| `fairwater-layout` | keep |
+
+Stale badge rules: <1h good · 1–6h caution · >6h poor · missing = “No cached brief”.
+
+---
+
+# PART 3 — UI specs (pixel-intent, not fluff)
+
+## 3.1 Leave mode layout (mobile)
+```
+[ Inlet ▾ ] [ Home marina ▾ ]
+┌─────────────────────────┐
+│  GO | CAUTION | NO-GO   │  ← 56px tall, color fill
+│  reason line 1          │
+│  reason line 2          │
+└─────────────────────────┘
+NWS · cached 12m ago ✓
+Checklist 5/8  [Open]
+Fuel: 40 out / 80 RT · 43 gal · HOME OK
+[ Night helm ]
+```
+
+## 3.2 Run mode
+- Full-bleed map
+- Overlay chips: Chart/Sat/Hybrid/Fishing · Night · Mark · Record
+- Bottom sheet peek: fuel out/RT · GO HOME if short · distance to home
+- Range rings (Leaflet circle / geodesy): usable-nm, 40-nm, reserve dashed
+- Home marina pin + active inlet pin
+
+## 3.3 Fish mode
+- Bite score big number + 3 reasons
+- Species chips; if DMF suggests closed/uncertain → amber chip `Check regs`
+- Link button to NC DMF proclamations (existing URL OK)
+- Grounds search unchanged but add southern pins (Epic E)
+
+## 3.4 Night helm CSS
+Keep `html.night-helm` approach. Requirements:
+- Background near black
+- Accents red/amber only
+- Map CSS filter dim (brightness/contrast) — still readable contours
+- Gate colors remain distinct under red wash
+
+---
+
+# PART 4 — Epic implementation checklist
+
+## Epic A — Multi-inlet + home (P0)
+**Files:** create `inlets.ts`; edit `cruise.tsx`, `app.tsx`, `boat.ts`, `map.tsx`, `gate.ts` (pass inlet name into reasons).  
+**Remove:** hard-coded `const INLET = { lat: 34.68, ... Beaufort }` as the only inlet.  
+**Acceptance:**
+- [ ] Switching inlet changes title, station label, and gate query inputs
+- [ ] Setting home marina drops pin and enables Run Home ETA (distance nm, ETA minutes at cruiseKt)
+- [ ] Beaufort still works as today for wind/seas/ebb logic
+
+## Epic B — Fuel rings + math honesty (P0)
+**Files:** `map.tsx`, `cruise.tsx`, `boat.ts`  
+**Acceptance:**
+- [ ] Label always `40 nm out · 80 nm RT` when one-way=40
+- [ ] Hand check: hours = 80/28 ≈ 2.86h · gal = 2.86*15 ≈ 43 · usable = 170*0.75 = 127.5 → HOME OK
+- [ ] Closed waypoint loop does not double
+- [ ] Rings visible in Run mode; toggleable
+
+## Epic C — Sandbar advisory (P0)
+**Files:** `shoal.ts`, curated sandbar pins in `inlets.ts` or `grounds.ts`, UI in Leave/Run  
+**Acceptance:**
+- [ ] Changing draft or tide changes level
+- [ ] Disclaimer always visible
+- [ ] unknown when depth missing
+
+## Epic D — Offline (P0)
+**Files:** `conditions.ts` / panel / cruise brief cache  
+**Acceptance:**
+- [ ] Airplane mode: Leave mode shows last gate + brief with stale badge
+- [ ] No blank white map if tiles saved; else explicit CTA “Save tiles for home area”
+
+## Epic E — Fish trust + grounds (P1)
+Add grounds (minimum):
+- Myrtle Beach AR reefs (generic pin OK with note)
+- Little River inlet approaches
+- Radio Island / Beaufort local
+- Wrightsville already exists — keep  
+**Acceptance:** seasonal species never shown as “target” without regs link; warning chip when uncertain.
+
+## Epic F — Export + boat card (P1)
+- GPX 1.1 for waypoints + track
+- Catch edit/delete + CSV
+- Boat card form bound to store; Reset 262 button calls `applySportsman262()`  
+**Acceptance:** GPX opens in a second tool; CSV has header row.
+
+## Epic G — Polish (P1)
+- Modes Leave/Run/Fish
+- Fix buoy/tile loading race (timeout 8s → retry button)
+- Mobile peek shows gate+fuel+bite
+- Delete or wire `chartOn`
+- Fix trip migrate so it does **not** force `beaufort-inlet` on every version bump if user picked another ground (bug today in `trip.ts` migrate)
+- Screenshots: desktop+mobile × Leave/Run/Fish/Night → `/screenshots/masterpiece-*`
+
+---
+
+# PART 5 — Explicit DO NOT
+- Do not add login/auth requirement for v1 masterpiece
+- Do not claim Garmin-equivalent navigation
+- Do not invent bathymetry databases
+- Do not rename product to Fairview
+- Do not remove Sportsman 262 migrate
+- Do not change `planFuelNm` to stop doubling without updating all UI labels to match
+
+---
+
+# PART 6 — Paste prompt for Grok Build Beta (use THIS, not the short one)
+
+```
+You are upgrading an EXISTING Fairwater app (folder may be named fairview). Read FAIRWATER-MASTERPIECE-GROK-BUILD-BRIEF-V2-NO-GAPS.md and follow it exactly. Do not scaffold a new app.
+
+Preserve: Sportsman Open 262 preset + migrate, checklist, night helm, last-good NWS brief, planFuelNm one-way doubling with 40 out / 80 RT labels.
+
+Implement Epics A→G in order from the brief. Create src/lib/marine/inlets.ts and src/lib/marine/shoal.ts as specified. Fix trip.ts migrate so it stops forcing beaufort-inlet on every bump. Fix routeFuel loop double-count. Add Leave/Run/Fish modes. Add map range rings. Add offline conditions cache + stale badge. Add GPX export.
+
+After each epic, typecheck and check that epic’s acceptance boxes. Final deliverable: working app + screenshots/masterpiece-* + short CHANGELOG of files touched.
+```
+
+---
+
+# PART 7 — What to upload to Grok Build Beta
+1. Current Fairwater zip (with P0 fixes already in tree)
+2. This file: `FAIRWATER-MASTERPIECE-GROK-BUILD-BRIEF-V2-NO-GAPS.md`
+3. Optional: `fairwater-audit-2026-09-23.md` for context
+
+**Answer to “is the short brief enough?”** — No. Use **V2**. The short brief defines vision; V2 locks schemas, files, UI, math, and pass/fail so the model cannot invent gaps.

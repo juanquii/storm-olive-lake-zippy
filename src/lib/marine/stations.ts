@@ -1,0 +1,58 @@
+export type TideStation = {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+};
+
+/** Coastal NOAA CO-OPS stations used for tide predictions. Ids are 7 digits. */
+export const TIDE_STATIONS: TideStation[] = [
+  { id: "8638863", name: "Chesapeake Bay Bridge Tunnel", lat: 36.9667, lng: -76.1133 },
+  { id: "8638610", name: "Sewells Point", lat: 36.9467, lng: -76.33 },
+  { id: "8637689", name: "Yorktown", lat: 37.2267, lng: -76.4786 },
+  { id: "8632200", name: "Kiptopeke", lat: 37.1652, lng: -75.9884 },
+  { id: "8573364", name: "Bishops Head", lat: 38.2206, lng: -76.0383 },
+  { id: "8577330", name: "Solomons Island", lat: 38.3167, lng: -76.4517 },
+  { id: "8575512", name: "Annapolis", lat: 38.9833, lng: -76.4817 },
+  { id: "8631044", name: "Wachapreague", lat: 37.6078, lng: -75.6858 },
+  { id: "8570283", name: "Ocean City Inlet", lat: 38.3283, lng: -75.0917 },
+  { id: "8651370", name: "Duck", lat: 36.1833, lng: -75.7467 },
+  { id: "8652587", name: "Oregon Inlet Marina", lat: 35.795, lng: -75.5483 },
+  { id: "8654467", name: "Hatteras", lat: 35.2086, lng: -75.7042 },
+  { id: "8656483", name: "Beaufort", lat: 34.7173, lng: -76.6707 },
+  { id: "8656613", name: "Swansboro", lat: 34.6866, lng: -77.1181 },
+  { id: "8658120", name: "Wilmington", lat: 34.2267, lng: -77.9533 },
+  { id: "8658163", name: "Wrightsville Beach", lat: 34.2133, lng: -77.7867 },
+  { id: "8659084", name: "Southport", lat: 33.915, lng: -78.0183 },
+  { id: "8659182", name: "Oak Island", lat: 33.9017, lng: -78.0817 },
+  { id: "8659897", name: "Sunset Beach Pier", lat: 33.865, lng: -78.5067 },
+  { id: "8665530", name: "Charleston", lat: 32.7817, lng: -79.925 },
+  { id: "8661070", name: "Springmaid Pier", lat: 33.655, lng: -78.9183 },
+  { id: "8720218", name: "Mayport", lat: 30.3967, lng: -81.4306 },
+  { id: "8721604", name: "Trident Pier", lat: 28.4158, lng: -80.5931 },
+  { id: "8722670", name: "Lake Worth Pier", lat: 26.6128, lng: -80.0342 },
+  { id: "8723214", name: "Virginia Key", lat: 25.7317, lng: -80.1617 },
+  { id: "8723970", name: "Vaca Key", lat: 24.711, lng: -81.1075 },
+  { id: "8725110", name: "Naples", lat: 26.1317, lng: -81.8075 },
+  { id: "8725520", name: "Fort Myers", lat: 26.6477, lng: -81.8712 },
+  { id: "8726520", name: "St. Petersburg", lat: 27.7606, lng: -82.6269 },
+  { id: "8729108", name: "Panama City", lat: 30.1523, lng: -85.6669 },
+  { id: "8735180", name: "Dauphin Island", lat: 30.25, lng: -88.075 },
+  { id: "8761724", name: "Grand Isle", lat: 29.2633, lng: -89.9567 },
+  { id: "8770570", name: "Sabine Pass North", lat: 29.7284, lng: -93.8701 },
+  { id: "8771450", name: "Galveston Pier 21", lat: 29.31, lng: -94.7933 },
+  { id: "8775870", name: "Bob Hall Pier", lat: 27.5803, lng: -97.2167 },
+  { id: "8534720", name: "Atlantic City", lat: 39.355, lng: -74.4183 },
+  { id: "8531680", name: "Sandy Hook", lat: 40.4669, lng: -74.0094 },
+  { id: "8510560", name: "Montauk", lat: 41.0483, lng: -71.96 },
+  { id: "8518750", name: "The Battery", lat: 40.7006, lng: -74.0142 },
+  { id: "8449130", name: "Nantucket Island", lat: 41.285, lng: -70.0967 },
+  { id: "8447930", name: "Woods Hole", lat: 41.5236, lng: -70.6711 },
+  { id: "8443970", name: "Boston", lat: 42.3548, lng: -71.0534 },
+  { id: "9410170", name: "San Diego", lat: 32.7142, lng: -117.1736 },
+  { id: "9410660", name: "Los Angeles", lat: 33.72, lng: -118.2717 },
+  { id: "9413450", name: "Monterey", lat: 36.605, lng: -121.888 },
+  { id: "9414290", name: "San Francisco", lat: 37.8063, lng: -122.4659 },
+  { id: "9440910", name: "Toke Point", lat: 46.7075, lng: -123.9669 },
+  { id: "9432780", name: "Charleston, OR", lat: 43.345, lng: -124.3217 },
+];

@@ -1,0 +1,76 @@
+# Fairwater live QA + regression + UX peers — 2026-09-23
+
+App tested: Grok Build masterpiece zip @ http://127.0.0.1:8080  
+Boat frame: Sportsman Open 262 · 70 West · Beaufort · 40 out / 80 RT
+
+## Bottom line
+The build is usable and hits most of the V2 brief. Ship blockers are a typecheck break and broken GPX escaping. Biggest user-feel gaps vs Navionics / ActiveCaptain / PredictWind / Fishbrain / Windy are: Leave needs multi-slot departure compare, Run needs always-visible edge telemetry, offline readiness must be obvious, and mobile Fish scroll leaves Bite/Check regs off-screen.
+
+## Live walkthrough (desktop + 390×844)
+| Step | Result |
+| --- | --- |
+| Leave: inlet switch, 70 West, gate, checklist, 40/80 fuel | PASS |
+| Run: map, rings, pins, marks/record, GO HOME, night | PASS |
+| Fish: bite, Check regs, grounds, search | PASS |
+| Night helm readable | PASS |
+| Sandbar depth → level change | PASS |
+| GPX button click | PASS (code: escapeXml still broken for special chars) |
+| Blank map / console hard errors | PASS (none); Recharts 0×0 warnings on mobile mode switch |
+
+### Live bugs
+- **Major — Mobile Fish scroll:** after Leave content, switching to Fish keeps old scroll; Bite + Check regs sit above the viewport (looks empty). Screenshot: `bug-mobile.png`
+- **Major — Mobile Recharts 0×0:** tide chart mounts at zero size during mode transitions
+- **Minor — Mobile Leave:** map shrinks ~95px when sheets open; panel dominates
+- **Minor — Gate flash:** Caution → No-go after feeds land; loading state weak
+
+## Code regressions (vs V2 brief)
+### Blockers
+1. `app.tsx` L84 — `rehydrate().then` → sole `tsc` error; can clobber saved sheet
+2. `gpx.ts` `escapeXml` no-op — invalid GPX if name has `&` `<` `>`
+
+### Major
+1. Run peek: Mark/Record only in cruise fold (not map overlay chips) — bury underway
+2. `fairwater-gate-last` write-only — offline gate restore incomplete
+3. Shellfish closures still Carteret/Onslow only — southern inlets miss Brunswick/NH/Horry
+4. Checklist hard-codes AMZ158
+5. Fish: weak best-window + Legal-to-keep chip
+6. No dedicated 8s buoy timeout → retry as Epic G specified
+
+### Verified keep
+planFuelNm doubles; closed loop no double; Sportsman migrate; trip migrate; Leave/Run/Fish; all three disclaimers; rings; southern grounds; screenshots present
+
+## Peer UX steal list (top apps)
+Peers: ActiveCaptain · Navionics · Fishbrain · PredictWind/Windy · C-MAP
+
+### Keep (Fairwater already ahead)
+Leave/Run/Fish · Sportsman 40/80 fuel · multi-inlet NC gate · night helm · sandbar draft advisory · last-good cache without paywall
+
+### P0 polish (match top apps)
+1. **Departure strip** Now / +6h / Tomorrow — PredictWind
+2. **Run edge strip** SOG · home nm · fuel · GO HOME always visible — Navionics
+3. **Ready-for-sea** cache ages + download % — Navionics / ActiveCaptain
+4. **`N advisories` chip** then drill-down — Navionics hazards
+5. **Draft-danger layer toggle** — Navionics shallow / C-MAP depth shading
+
+### P1
+Weather along run (C-MAP) · Wind/Gust/Seas scrubber (Windy) · tappable BiteScore + best window (Fishbrain) · long-press measure (Navionics) · GPX import+export fixed · Agree/Mixed/Conflict forecast chip (PredictWind)
+
+### P2
+JIT draft prompt · species filter chips · strict Run declutter
+
+### Anti-patterns never copy
+Paywall mid-trip · rate-app modals in Run · chart clutter by default · tiny drag waypoints · social DMs in nav · forcing Garmin ecosystem
+
+## Fix order (do these first)
+1. Fix `app.tsx` rehydrate + `gpx.ts` escapeXml (blockers)
+2. Mobile: reset panel scroll on mode change; fix Recharts size on mount
+3. Map overlay Mark/Record in Run; edge telemetry strip
+4. Read gate cache offline; stale badges for conditions/gate
+5. Departure strip + Ready-for-sea banner
+6. Expand closures by inlet; generic checklist NWS label
+7. Fish best-window + Legal-to-keep chip
+
+## Artifacts
+- Live screens: `/workspace/fairwater-live-qa/*.png`
+- Full UX peers: `fairwater-ux-benchmark-2026-09-23.md`
+- Full regression: `fairwater-regression-2026-09-23.md`

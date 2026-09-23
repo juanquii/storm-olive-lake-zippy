@@ -1,0 +1,402 @@
+# FAIRWATER FOLLOW-UP BRIEF V3 — NO-GAP PATCH FOR GROK BUILD
+Version: 3 (post-masterpiece QA) · 2026-09-23 America/New_York
+Product name: Fairwater (folder may still be named fairview / app-builder-workspace)
+Use with: the CURRENT masterpiece zip you already built (Leave/Run/Fish already exist). Do NOT scaffold a new app.
+
+================================================================================
+CRITICAL INSTRUCTIONS TO GROK BUILD (READ FIRST)
+================================================================================
+1. Open the EXISTING repo. Extend files listed below. Do not create a parallel app.
+2. Do NOT regress: Sportsman Open 262 preset + migrate, checklist, night helm,
+   planFuelNm one-way doubling with UI labels "40 nm out · 80 nm RT", Leave/Run/Fish,
+   inlets.ts, shoal.ts, southern grounds, map range rings, three permanent disclaimers.
+3. Ship Epics in order: FIX → MOBILE → RUN → OFFLINE → LEAVE-UX → FISH → POLISH.
+   Do not jump to AIS, auth, social, paywalls, or plotter-equivalent navigation.
+4. After EACH epic: run `npm run typecheck` and complete that epic's acceptance boxes
+   before starting the next. Typecheck must exit 0 before Epic FIX is closed.
+5. Output: working app + CHANGELOG-followup-v3.md + screenshots/followup-v3-* (desktop + mobile × Leave/Run/Fish/Night).
+6. When this brief conflicts with chat fluff, THIS FILE WINS.
+
+================================================================================
+PART 0 — CONTEXT (DO NOT RE-IMPLEMENT; ONLY FIX/EXTEND)
+================================================================================
+Already shipped and verified PASS (keep behavior):
+- helmMode: "leave" | "run" | "fish" in src/store/trip.ts
+- Sportsman 262 defaults; burnGph 15; planningBurnGph; tankGal 170; reservePct 25
+- OFFSHORE_ONE_WAY_NM = 40; planFuelNm doubles; closed mark loop ≤0.05 nm does NOT double
+- src/lib/marine/inlets.ts (Beaufort…Little River + marinas 70-west, coral-bay, sloop-point)
+- src/lib/marine/shoal.ts shoalAdvisory
+- Range rings in Run; home + inlet pins
+- Disclaimers (exact strings — do not rewrite):
+  Map: "Advisory only — not a chartplotter. Confirm with NOAA charts / Coast Pilot / your eyes."
+  Gate: "Still your call at the dock."
+  Sandbar: "Depth advisory only — not a clearance guarantee."
+
+Live QA (2026-09-23) confirmed desktop Leave/Run/Fish/Night/sandbar/GPX button work.
+This brief closes the FAIL / MAJOR gaps found in code review + live mobile QA + peer UX gaps
+vs Navionics, ActiveCaptain, PredictWind, Fishbrain, Windy, C-MAP.
+
+================================================================================
+PART 1 — EPIC FIX (P0 BLOCKERS) — MUST COMPLETE FIRST
+================================================================================
+
+## FIX-1 — Typecheck: trip rehydrate (.then on void)
+FILE: src/components/fairwater/app.tsx (~lines 83–92)
+
+CURRENT (broken):
+```
+useEffect(() => {
+  void useTrip.persist.rehydrate().then(() => {
+    if (useTrip.getState().helmMode === "leave") setSheet("open");
+  });
+  const saved = readLayout();
+  setPanelPx(saved.panelPx);
+  setSheet(saved.sheet);
+  setLayoutReady(true);
+  setLive(true);
+}, []);
+```
+
+REQUIRED replacement behavior:
+1. `const saved = readLayout();` FIRST — apply panelPx + sheet from saved layout.
+2. Rehydrate without illegal `.then` on `void | Promise<void>`:
+```
+void Promise.resolve(useTrip.persist.rehydrate()).then(() => {
+  // ONLY force sheet "open" for leave if there was NO saved layout preference
+  // OR if saved.sheet was undefined. Never clobber an explicit saved "peek"|"closed".
+});
+```
+3. Prefer:
+```
+useEffect(() => {
+  const saved = readLayout();
+  setPanelPx(saved.panelPx);
+  setSheet(saved.sheet);
+  setLayoutReady(true);
+  setLive(true);
+  void (async () => {
+    await Promise.resolve(useTrip.persist.rehydrate());
+    // do not override saved.sheet here
+  })();
+}, []);
+```
+4. When user taps Leave mode tab, you MAY setSheet("open"); when user taps Run, setSheet("peek") as today.
+
+ACCEPTANCE FIX-1:
+- [ ] `npm run typecheck` exits 0 (zero errors)
+- [ ] Reloading with saved sheet "peek" keeps peek (not forced open)
+- [ ] Leave tab still opens sheet when user selects Leave
+
+## FIX-2 — GPX escapeXml no-op
+FILE: src/lib/marine/gpx.ts
+
+CURRENT (broken — replacements are identity):
+```
+function escapeXml(value: string): string {
+  return value.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
+}
+```
+
+REQUIRED:
+```
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+```
+
+ACCEPTANCE FIX-2:
+- [ ] Mark named `A & B <C>` exports GPX containing `&amp;` and `&lt;` (not raw &/<)
+- [ ] GPX still has version="1.1" creator="Fairwater"
+- [ ] Optional unit: pure function test or script assert
+
+## FIX-3 — Gate cache read path (write-only today)
+FILES: src/components/fairwater/cruise.tsx (GATE_CACHE_KEY = "fairwater-gate-last")
+       reuse src/lib/marine/freshness.ts
+
+BEHAVIOR:
+- KEEP writing { inletId, gate, reasons, at } on successful live gate compute.
+- NEW: when live conditions are missing/error AND cache exists for same activeInletId,
+  display cached gate + reasons with freshness badge (good <1h / caution 1–6h / poor >6h).
+- If cache inletId !== activeInletId → ignore cache (do not show wrong inlet gate).
+- Badge copy examples: "Cached gate · 12m ago" / "Cached gate · stale"
+
+ACCEPTANCE FIX-3:
+- [ ] Airplane / failed feeds: Leave still shows last gate for that inlet with age badge
+- [ ] Switching inlet does not show previous inlet's cached gate
+- [ ] Live data present → live gate wins; cache still updated
+
+================================================================================
+PART 2 — EPIC MOBILE (P0 LIVE QA)
+================================================================================
+
+## MOB-1 — Reset scroll on helmMode change
+FILES: src/components/fairwater/app.tsx, panel scroll container, cruise sheet body
+
+REQUIRED:
+- Identify the scrollable panel/sheet element (mobile bottom sheet / right panel overflow).
+- On helmMode change (leave|run|fish), set scrollTop = 0 (or scrollTo({ top: 0 })).
+- Prefer a ref on the scroll parent; do not rely on window scroll alone.
+
+ACCEPTANCE MOB-1:
+- [ ] At 390×844: open Leave, scroll deep into checklist/fuel, switch to Fish → Bite score + "Check regs" visible without manual scroll-up
+- [ ] Same for Fish → Leave and Leave → Run
+
+## MOB-2 — Recharts 0×0 on mode switch
+FILE: src/components/fairwater/tide-chart.tsx (and any ResponsiveContainer parent)
+
+REQUIRED:
+- Do not mount Recharts until container has width>0 and height>0 OR remount with `key={helmMode + sheet}` after layout.
+- After sheet/mode change, dispatch resize (already partially done) AND delay chart mount one frame.
+- Eliminate console warning: "width(0) and height(0) of chart should be greater than 0"
+
+ACCEPTANCE MOB-2:
+- [ ] Mobile mode switches: no Recharts 0×0 warnings in console
+- [ ] Tide chart visible with non-zero size when its fold is open
+
+## MOB-3 — Leave map min height when sheet open
+FILE: src/components/fairwater/app.tsx layout CSS
+
+REQUIRED:
+- When mobile sheet is "open", map region must keep min-height ≥ 160px (prefer 180–220px).
+- Sheet may scroll under/over but must not crush map to ~95px.
+
+ACCEPTANCE MOB-3:
+- [ ] Mobile Leave with sheet open: map ≥ 160px tall; chart tiles still readable
+
+================================================================================
+PART 3 — EPIC RUN (P0 HELM UX — match Navionics edge chrome)
+================================================================================
+
+## RUN-1 — Map overlay chips: Mark + Record in Run
+FILE: src/components/fairwater/map.tsx
+WIRE TO: useBoat().toggleMark / setRecording / markMode / recording (same as cruise.tsx)
+
+REQUIRED overlay (Run mode only), ≥44px tap targets:
+- [Mark] toggles markMode (accent when on)
+- [Record] / [Stop] toggles recording
+- Keep existing Whole coast / Save view / Hide rings
+
+ACCEPTANCE RUN-1:
+- [ ] Mobile Run with sheet "peek": can Drop mark and Record track WITHOUT opening sheet
+- [ ] Marks appear on map; recording appends track points as today
+
+## RUN-2 — Permanent Run edge telemetry strip
+FILES: app.tsx and/or map.tsx / cruise.tsx
+
+REQUIRED always-visible strip while helmMode==="run" (desktop + mobile peek):
+```
+Advisory · Home {nm} nm · {etaMin} min · Fuel RT {gal} gal · {HOME OK | GO HOME}
+```
+- HOME OK / GO HOME uses existing usable-fuel vs RT burn logic.
+- Night helm: strip remains readable (red/amber accents OK).
+- Label strip with small "Advisory" so it is not confused with a chartplotter.
+
+ACCEPTANCE RUN-2:
+- [ ] Mobile Run peek: strip visible without expanding sheet
+- [ ] When RT gallons > usable, strip shows GO HOME (not HOME OK)
+
+## RUN-3 — Advisories chip (Navionics hazard pattern)
+FILES: map.tsx + cruise.tsx / new small helper optional src/lib/marine/advisories.ts
+
+REQUIRED:
+- Compute list from: sandbar level thin|risk, active inlet.notes, optional curated shoal pins on route.
+- Show single chip `N advisories` (hidden if 0).
+- Expand → list with reasons; map pins emphasized while expanded.
+- Do NOT paint all hazard icons by default (keep C-MAP-style clean chart).
+
+ACCEPTANCE RUN-3:
+- [ ] Sandbar risk → at least 1 advisory
+- [ ] Collapsed default: map not cluttered with extra icons
+
+================================================================================
+PART 4 — EPIC OFFLINE / READY-FOR-SEA (P0 — ActiveCaptain/Navionics pattern)
+================================================================================
+
+## OFF-1 — Ready-for-sea row on Leave
+FILE: cruise.tsx Leave section (above or beside checklist)
+
+REQUIRED row:
+```
+Ready for sea
+Brief {good|caution|poor|missing} · Conditions {…} · Gate {…} · Tiles {n saved | none}
+```
+- Use freshness() for brief/conditions/gate cache ages.
+- If tiles for home area == 0: CTA button "Save tiles for home area" (may already exist — wire into this row).
+- Non-blocking: never spinner-lock the Leave gate while caching.
+
+ACCEPTANCE OFF-1:
+- [ ] Leave shows four readiness cells
+- [ ] >6h cache shows poor styling
+- [ ] Offline Leave still usable with last-good + badges
+
+## OFF-2 — Buoy / feeds retry (Epic G remainder)
+FILES: conditions.ts + cruise.tsx inlet fold
+
+REQUIRED:
+- Buoy/conditions fetch: AbortSignal ~8–12s; on timeout/error show "Retry feeds" even when partial data exists.
+- Do not leave gate stuck on first "Caution" without a visible loading → settled transition.
+  While feeds pending: gate header shows "Checking…" (not a fake GO).
+
+ACCEPTANCE OFF-2:
+- [ ] Timeout produces Retry control
+- [ ] Gate does not flash a final color until settled OR explicitly shows Checking…
+
+================================================================================
+PART 5 — EPIC LEAVE-UX (P0/P1 — PredictWind / Windy patterns)
+================================================================================
+
+## LEAVE-1 — Departure strip (PredictWind-style coastal)
+FILE: cruise.tsx Leave mode
+
+REQUIRED under gate card:
+Three selectable slots: Now | +6h | Tomorrow 6–9 AM local (America/New_York).
+Each slot shows: seas · period · wind · ebb×swell flag for activeInlet.
+Selecting a slot recomputes gate reasons using forecast at that time (reuse existing brief/conditions time series if present; if only Now data exists, disable future slots with "Forecast limited" — do NOT invent numbers).
+
+ACCEPTANCE LEAVE-1:
+- [ ] Three slots render on Leave
+- [ ] Selecting an available slot updates gate color/reasons
+- [ ] No fabricated forecast values
+
+## LEAVE-2 — Checklist NWS label not hard-coded AMZ158
+FILE: src/store/boat.ts CHECKLIST_ITEMS
+
+REQUIRED:
+- Change nws item label to: "NWS coastal waters read" (no AMZ158 hard-code)
+- OR dynamically show active inlet nwsZoneHint in cruise checklist render (preferred):
+  `NWS coastal waters (${inlet.nwsZoneHint}) read`
+
+ACCEPTANCE LEAVE-2:
+- [ ] Masonboro / Little River: checklist does not say AMZ158 unless that inlet's hint is AMZ158
+
+## LEAVE-3 — Closures follow southern ops
+FILE: src/lib/marine/brief.ts loadClosures (~carteret|onslow filter)
+
+REQUIRED:
+Map active inlet → county regex allowlist:
+- beaufort, bogue → carteret|onslow
+- masonboro → new hanover|onslow
+- cape-fear, lockwoods-folly → brunswick|new hanover
+- little-river → horry|brunswick
+Pass inletId into loadClosures; filter proclamations accordingly.
+
+ACCEPTANCE LEAVE-3:
+- [ ] Little River / Cape Fear Leave can show non-Carteret closures when DMF feed includes them
+- [ ] Beaufort still filters Carteret/Onslow
+
+================================================================================
+PART 6 — EPIC FISH (P1 — Fishbrain clarity)
+================================================================================
+
+## FISH-1 — Best window chip + Legal-to-keep chip
+FILE: src/components/fairwater/panel.tsx
+
+REQUIRED above the fold in Fish mode:
+1. Chip: `Best window {start}–{end}` from existing bestWindow()
+2. Amber chip when season/legal uncertain: `Legal to keep? · Check regs` (keep existing DMF link)
+3. Bite score is tappable → expands factor list (reuse existing reasons; do not invent new model)
+
+ACCEPTANCE FISH-1:
+- [ ] Fish mode shows Best window without scrolling on mobile after MOB-1
+- [ ] Uncertain/closed season path shows amber Legal chip
+- [ ] Check regs still opens NC DMF proclamations URL
+
+## FISH-2 — Optional species filter chips (P2 if time)
+- Filter grounds list by selected species; free (no paywall)
+
+================================================================================
+PART 7 — EPIC POLISH (P1)
+================================================================================
+
+## POL-1 — Clear home marina to null
+FILE: cruise.tsx home marina <select>
+- Add option "No home marina" → setHomeMarina(null)
+- value must not coerce null → "70-west"
+
+## POL-2 — Long-press measure (Navionics crosshair)
+FILE: map.tsx
+- Long-press (≥400ms) → transient nm + bearing to home marina AND active inlet
+- Dismiss on short tap elsewhere
+- Night-helm readable
+
+## POL-3 — Draft-danger layer toggle (advisory)
+- Toggle on Fishing/Hybrid views only; uses draftFt + margin + shoal helper / curated pins
+- Chart view default OFF
+- Disclaimer remains visible
+
+## POL-4 — GPX import
+- Import GPX → marks (and optional track). Export already exists — escapeXml fixed in FIX-2.
+
+## POL-5 — Forecast Agree/Mixed/Conflict chip (if buoy + model both present)
+- Conflict forces CAUTION floor (never pure GO when sources disagree beyond threshold)
+
+================================================================================
+PART 8 — EXPLICIT DO NOT
+================================================================================
+- Do not scaffold a new app or rename product away from Fairwater
+- Do not add login/auth requirement
+- Do not add paywalls, rate-app modals, or social/DM feeds
+- Do not claim chartplotter / Garmin Helm equivalence
+- Do not invent bathymetry databases or fabricated forecast numbers
+- Do not remove Sportsman 262 migrate or change planFuelNm doubling without updating ALL UI labels
+- Do not put Fish catch clutter on by default in Run
+- Do not break night-helm or the three disclaimer strings
+
+================================================================================
+PART 9 — SUGGESTED IMPLEMENTATION ORDER (CHECKLIST)
+================================================================================
+[ ] FIX-1 typecheck rehydrate
+[ ] FIX-2 escapeXml
+[ ] FIX-3 gate cache read
+[ ] MOB-1 scroll reset
+[ ] MOB-2 Recharts size
+[ ] MOB-3 map min-height
+[ ] RUN-1 Mark/Record overlays
+[ ] RUN-2 edge strip
+[ ] RUN-3 advisories chip
+[ ] OFF-1 Ready-for-sea
+[ ] OFF-2 retry + Checking…
+[ ] LEAVE-1 departure strip
+[ ] LEAVE-2 checklist zone label
+[ ] LEAVE-3 closures by inlet
+[ ] FISH-1 best window + legal chip
+[ ] POL-1..5 as time allows
+[ ] npm run typecheck = 0
+[ ] Screenshots followup-v3-desktop-{leave,run,fish,night}.png + mobile twins
+[ ] CHANGELOG-followup-v3.md listing files touched
+
+================================================================================
+PART 10 — PASTE PROMPT FOR GROK BUILD (USE THIS EXACTLY)
+================================================================================
+```
+You are patching an EXISTING Fairwater app (may be folder fairview / app-builder-workspace). Read FAIRWATER-FOLLOWUP-BRIEF-V3-NO-GAP.txt and follow it exactly. Do not scaffold a new app.
+
+Preserve: Sportsman Open 262 migrate, Leave/Run/Fish, 40 nm out / 80 nm RT fuel doubling, inlets/shoal/rings, night helm, three advisory disclaimers.
+
+Implement Epics in order: FIX → MOBILE → RUN → OFFLINE → LEAVE-UX → FISH → POLISH.
+Must fix first: (1) app.tsx useTrip.persist.rehydrate().then typecheck TS2339 via Promise.resolve; do not clobber saved sheet; (2) gpx.ts escapeXml must emit &amp; &lt; &gt;; (3) read fairwater-gate-last when offline for same inletId.
+
+Mobile: reset panel scrollTop on helmMode change; fix Recharts 0×0 on mode switch; keep map min-height ≥160px when sheet open.
+
+Run: Mark+Record map overlay chips; permanent Advisory edge strip (home nm, fuel RT, HOME OK/GO HOME); N advisories chip.
+
+Leave: Ready-for-sea freshness row; departure strip Now/+6h/Tomorrow without inventing forecasts; checklist NWS label not hard-coded AMZ158; closures county filter by inlet.
+
+Fish: Best window chip + amber Legal to keep?/Check regs; tappable bite score.
+
+After each epic run typecheck. Final: CHANGELOG-followup-v3.md + screenshots/followup-v3-*.
+```
+
+================================================================================
+PART 11 — WHAT TO UPLOAD TO GROK BUILD
+================================================================================
+1. Current Fairwater masterpiece source zip (the app you just built)
+2. This file: FAIRWATER-FOLLOWUP-BRIEF-V3-NO-GAP.txt
+3. Optional context: fairwater-regression-2026-09-23.txt , fairwater-ux-benchmark-2026-09-23.txt
+
+END OF BRIEF V3

@@ -1,0 +1,16 @@
+You are patching an EXISTING Fairwater app (may be folder fairview / app-builder-workspace). Read FAIRWATER-FOLLOWUP-BRIEF-V3-NO-GAP.txt and follow it exactly. Do not scaffold a new app.
+
+Preserve: Sportsman Open 262 migrate, Leave/Run/Fish, 40 nm out / 80 nm RT fuel doubling, inlets/shoal/rings, night helm, three advisory disclaimers.
+
+Implement Epics in order: FIX → MOBILE → RUN → OFFLINE → LEAVE-UX → FISH → POLISH.
+Must fix first: (1) app.tsx useTrip.persist.rehydrate().then typecheck TS2339 via Promise.resolve; do not clobber saved sheet; (2) gpx.ts escapeXml must emit &amp; &lt; &gt;; (3) read fairwater-gate-last when offline for same inletId.
+
+Mobile: reset panel scrollTop on helmMode change; fix Recharts 0×0 on mode switch; keep map min-height ≥160px when sheet open.
+
+Run: Mark+Record map overlay chips; permanent Advisory edge strip (home nm, fuel RT, HOME OK/GO HOME); N advisories chip.
+
+Leave: Ready-for-sea freshness row; departure strip Now/+6h/Tomorrow without inventing forecasts; checklist NWS label not hard-coded AMZ158; closures county filter by inlet.
+
+Fish: Best window chip + amber Legal to keep?/Check regs; tappable bite score.
+
+After each epic run typecheck. Final: CHANGELOG-followup-v3.md + screenshots/followup-v3-*.

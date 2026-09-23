@@ -1,0 +1,233 @@
+# Fairwater UX Peer Benchmark — 2026-09-23
+
+**Audience:** Sportsman Open 262 owner · NC Crystal Coast / Myrtle approaches · dock + underway phone/tablet  
+**Peers compared:** Garmin ActiveCaptain · Navionics Boating · Fishbrain · PredictWind (+ Windy.com for map UX) · C-MAP App (strong peer) · TIMEZERO (workspace pattern only)  
+**Method:** Product docs, App Store / Play listings, vendor blogs/help, independent navigator review, UX flow breakdowns. Features below are only those verified in sources.  
+**Fairwater frame:** Leave / Run / Fish modes · Sportsman 262 fuel 40-out / 80-RT · multi-inlet gate · night helm · sandbar advisory · localStorage / last-good cache (assumed from product brief).
+
+---
+
+## Peer patterns Fairwater should steal
+
+### 1. Departure comparison card (go / no-go across days)
+- **Who does it well:** PredictWind Departure / Power Planning.
+- **What the user sees/does:** Sets a route, then gets a side-by-side summary of leaving Day 1–4 with wind, waves, currents, rain/CAPE, and (for power) % time on beam vs upwind/downwind so one glance picks the better window.
+- **Fairwater implement:** On **Leave**, add a 48–72h strip under the GO/CAUTION/NO-GO gate: three departure slots (Now / +6h / Tomorrow AM) each with seas · period · wind · ebb×swell flag for the **active inlet**. Tap a slot to recompute gate + fuel burn uplift. Do not invent routing — reuse existing gate inputs.
+
+### 2. Hazard count → drill-down (not a wall of icons)
+- **Who does it well:** Navionics Boating (route hazard summary + map icons; v23 notifications along path).
+- **What the user sees/does:** After a route is set, a single line like “2 hazards along the route,” then taps into specific icons without cluttering the chart first.
+- **Fairwater implement:** When Run marks or a 40 nm plan crosses shoal pins / inlet notes, show one chip: `N advisories` (sandbar / shipping / ebb). Expand to a list tied to map pins. Keep map clean until expanded.
+
+### 3. Map-first nav chrome with edges, not menus
+- **Who does it well:** Navionics navigation screen (professional review: SOG/COG, leg, ETA on screen edges; no menu hunting underway).
+- **What the user sees/does:** Starts the route and reads speed, course, remaining distance/time, and ETA without opening settings.
+- **Fairwater implement:** In **Run**, pin a permanent edge strip: `SOG · to home nm · fuel RT · GO HOME`. Hide secondary tools behind one `⋯` (Mark / Record / Layers). Accept that Fairwater is advisory-only — label strip `Advisory`.
+
+### 4. Contextual boat params (ask only when math needs them)
+- **Who does it well:** Navionics (prompts for boat settings when first creating a route, tied to accurate calculation).
+- **What the user sees/does:** Doesn’t fill a settings form on day one; gets asked draft/clearance/fuel when Auto Guidance / route needs it.
+- **Fairwater implement:** Keep Sportsman 262 defaults silent. Only surface draft / margin / planning burn when user opens sandbar advisory or toggles “rough seas burn.” One-line reason: “Used for clearance / fuel math.”
+
+### 5. Tap-hold measure (distance / bearing without a mode)
+- **Who does it well:** Navionics crosshair (tap-and-hold → distance & bearing).
+- **What the user sees/does:** Presses the chart once, reads range/bearing to that point, continues planning.
+- **Fairwater implement:** Long-press map → transient crosshair + nm + bearing to home marina and to active inlet. No separate Measure mode.
+
+### 6. Offline-first chart / data readiness
+- **Who does it well:** Navionics (onboarding forces map download); ActiveCaptain OneChart + 2026 download progress banners; C-MAP Premium offline maps.
+- **What the user sees/does:** Knows before leaving the dock whether the area is cached; sees download size/% while still on Wi‑Fi.
+- **Fairwater implement:** Leave-mode “Ready for sea” checklist item: brief + conditions + gate + active inlet tiles cached. Show age badges (<1h / 1–6h / >6h) already in brief; mirror for conditions/gate keys. Banner while Save View / cache runs: size + %.
+
+### 7. Weather along the route (not a separate weather app hop)
+- **Who does it well:** C-MAP (Weather Along the Route, weather overlay on chart); PredictWind (conditions along entire passage in departure summary).
+- **What the user sees/does:** Selects destination/route and reads forecast for that path without leaving the planning screen.
+- **Fairwater implement:** For active inlet + selected ground, show a mini “along run” row: wind/seas at inlet · mid-leg (Open-Meteo) · ground. Feed Leave gate with the worst segment, not only the dock reading.
+
+### 8. Layer scrubber for conditions (wind vs gust vs waves)
+- **Who does it well:** Windy.com (layer switch Wind / Gusts / Waves + timeline scrubber; tap location for values). Boaters consistently cite Windy’s map UI over denser tools for a quick look.
+- **What the user sees/does:** Flips layers, scrubs hours, taps a point to confirm numbers before committing to leave.
+- **Fairwater implement:** In Leave (and optional Run overlay), a single conditions scrubber: Now → +24h with three toggles Wind / Gust / Seas. Keep models opaque; show values Fairwater already trusts (Open-Meteo / buoy).
+
+### 9. BiteScore with factor breakdown (Fish mode clarity)
+- **Who does it well:** Fishbrain BiteGuide — BiteScore 1–10, BiteTime peaks, tap for factors + gameplan.
+- **What the user sees/does:** Sees a big score, taps it, reads which conditions help/hurt and how to fish that window.
+- **Fairwater implement:** Fish mode already plans a big bite number + 3 reasons — match Fishbrain’s affordance: score is tappable; expand lists contributing factors (wind, pressure trend, tide stage, solunar) already in data. Add BiteTime-style “best 3h window today” chip.
+
+### 10. Mode / workspace separation (plan vs helm)
+- **Who does it well:** TIMEZERO Workspace (only tools needed for navigating vs planning); Fairwater’s Leave/Run/Fish is the right product answer of the same idea.
+- **What the user sees/does:** Doesn’t get planning clutter while driving the boat.
+- **Fairwater implement:** Enforce mode chrome: Leave = gate+checklist (map secondary); Run = full-bleed map + edge strip; Fish = score+grounds (map secondary). Do not show Fishbrain-style social feed or ActiveCaptain community chrome in Run.
+
+### 11. Shallow / fishing depth shading as a purposeful layer
+- **Who does it well:** Navionics (highlight shallow areas, fishing depth ranges, night palette); C-MAP custom depth shading / REVEAL shaded relief (Premium).
+- **What the user sees/does:** Turns on shallow highlight or a target depth band for fishing without redrawing the whole chart.
+- **Fairwater implement:** Fishing / Hybrid views: toggle “Draft danger” using Sportsman draft 1.83 ft + margin for sandbar advisory coloring; optional “Fish band” (user min–max ft) as translucent fill. Keep Chart view relatively clean for Run.
+
+### 12. Home / sync of plan from couch to helm
+- **Who does it well:** ActiveCaptain + Navionics Plotter Sync (plan on phone, use on water); C-MAP plan on PC sync to tablet.
+- **What the user sees/does:** Builds route/waypoints at home; opens underway with the same plan.
+- **Fairwater implement:** Stay local-first: export GPX (track + marks) for Garmin handoff; import GPX into marks. No plotter Wi‑Fi required. Persist last Leave inlet + home marina so dock reopen is one tap.
+
+### 13. Uncluttered chart as a feature (C-MAP praise pattern)
+- **Who does it well:** C-MAP (user reviews: uncluttered, fast; chart personalisation).
+- **What the user sees/does:** Sees navigable chart first; layers are opt-in.
+- **Fairwater implement:** Default Run layers: NOAA chart + home + inlet + marks + range rings only. Community-style POIs, catch dots, and weather particles off unless mode = Fish or user enables.
+
+### 14. Model-agreement confidence (when forecasts disagree)
+- **Who does it well:** PredictWind Power Planning (four models shown; similarity → confidence).
+- **What the user sees/does:** Leaves when models agree; hesitates when they diverge.
+- **Fairwater implement:** Where Fairwater already fuses NWS text + buoy + model wind, show a small `Agree / Mixed / Conflict` chip on Leave based on whether wind/seas sources disagree beyond thresholds. Conflict forces CAUTION floor even if mean looks GO.
+
+---
+
+## Fairwater strengths to keep
+
+| Strength | Why peers don’t replace it |
+| --- | --- |
+| **Leave / Run / Fish modes** | Better than Navionics’ single nav metaphor or Fishbrain’s social-map default for a twin-outboard day boat. Matches TIMEZERO’s workspace idea without the desktop weight. |
+| **Sportsman 262 fuel (40 out / 80 RT)** | Navionics/C-MAP advertise fuel on Auto Guidance, but Fairwater’s fixed planning leg + GO HOME banner is personal and faster at the dock. |
+| **Multi-inlet gate (Beaufort → Little River)** | Peers are generic coast tools; ActiveCaptain/Navionics don’t encode NC ebb×swell bar judgment. Keep inlet-specific reasons. |
+| **Night helm (red/amber)** | Navionics added night palette; Fairwater’s dedicated helm theme + gate color retention is the right underway affordance. |
+| **Sandbar advisory (draft + tide + margin)** | Peers shade depth; Fairwater’s explicit draft-vs-water advisory with disclaimer is clearer for Bogue/Lookout sand. |
+| **localStorage / last-good brief** | PredictWind Offline / Navionics downloads are chart-heavy; Fairwater’s stale-badged conditions/gate cache fits cell death outside inlets without a subscription wall. |
+
+Do **not** dilute these by cloning Garmin ecosystem lock-in, Fishbrain social noise, or hard regional chart paywalls.
+
+---
+
+## Ranked recommendations (P0 / P1 / P2)
+
+### P0
+
+#### P0-1 — Leave: multi-slot departure strip
+- **Why on the water:** Dock decision is “go now or wait six hours,” not “stare at a single snapshot.” PredictWind’s four-day compare is the gold standard; Fairwater needs the coastal version.
+- **Effort:** M
+- **Acceptance:** With Beaufort selected and mixed seas forecast, Leave shows Now / +6h / Tomorrow; selecting +6h updates gate color + reason lines; fuel card still shows 40/80 using planning burn if seas elevated.
+- **Peer map:** PredictWind Departure / Power Planning.
+
+#### P0-2 — Run: edge telemetry strip (SOG · home nm · fuel · GO HOME)
+- **Why:** Underway, menus are dangerous; Navionics wins because critical numbers never leave the screen.
+- **Effort:** S
+- **Acceptance:** In Run on mobile, strip remains visible with bottom sheet collapsed; GO HOME appears when RT burn > usable; Night helm keeps strip readable (red/amber).
+- **Peer map:** Navionics navigation chrome.
+
+#### P0-3 — Ready-for-sea cache banner + conditions/gate stale badges
+- **Why:** Cell dies past the bar; ActiveCaptain/Navionics train boaters to download before cast-off.
+- **Effort:** M
+- **Acceptance:** Leave shows cache ages for brief, conditions, gate; >6h shows Poor; Save View / cache shows progress %; app still opens Leave with last-good gate when offline.
+- **Peer map:** Navionics offline-first download; ActiveCaptain download progress banners (2026).
+
+#### P0-4 — Hazard chip `N advisories` for sandbar / inlet notes
+- **Why:** Clutter kills charts; Navionics’ count-then-drill pattern keeps eyes on the channel.
+- **Effort:** S
+- **Acceptance:** Planning a path past a curated shoal pin shows `1 advisory`; expand lists sandbar level + disclaimer; map icons only after expand (or while expanded).
+- **Peer map:** Navionics route hazards.
+
+#### P0-5 — Draft-danger / fish-band layer toggles (advisory)
+- **Why:** Sportsman 22″ draft on NC sand needs a visual, not only text; Navionics shallow highlight / fishing ranges are the interaction to copy.
+- **Effort:** M
+- **Acceptance:** Toggle paints advisory polygons/pins using shoal helper; Chart view default off; Fishing view can default fish-band on; footer disclaimer always visible.
+- **Peer map:** Navionics shallow highlight + fishing ranges; C-MAP custom depth shading.
+
+### P1
+
+#### P1-1 — Weather-along-run mini panel (inlet → mid → ground)
+- **Why:** C-MAP’s along-route weather stops the Windy↔plotter app hop at the dock.
+- **Effort:** M
+- **Acceptance:** Selecting a ground shows three condition cells; Leave gate uses max(seas/wind) across cells; works for Beaufort→Big Rock and Masonboro→nearshore.
+- **Peer map:** C-MAP Weather Along the Route; PredictWind along-passage summary.
+
+#### P1-2 — Conditions scrubber (Wind / Gust / Seas × hours)
+- **Why:** Windy’s layer+timeline is how boaters actually validate a leave call.
+- **Effort:** M
+- **Acceptance:** Scrub +24h updates Leave preview numbers; Gust vs Wind labels distinct; no paywall mid-scrub.
+- **Peer map:** Windy.com overlays + timeline.
+
+#### P1-3 — Tap BiteScore → factor breakdown + best window chip
+- **Why:** Fishbrain’s score-without-explanation feels like a horoscope; breakdown earns trust.
+- **Effort:** S
+- **Acceptance:** Tap score expands reasons already computed; “Best window” chip shows highest 3h BiteTime-equivalent today.
+- **Peer map:** Fishbrain BiteScore / BiteTime.
+
+#### P1-4 — Long-press measure to home + inlet
+- **Why:** Fast “how far is that wreck?” without mode switching (Navionics crosshair).
+- **Effort:** S
+- **Acceptance:** Long-press shows nm/bearing to home marina and active inlet; dismiss on tap elsewhere; works in night helm.
+- **Peer map:** Navionics crosshair tool.
+
+#### P1-5 — GPX export/import for marks + track
+- **Why:** ActiveCaptain/Navionics live on the plotter; Fairwater wins by handing them a file, not pretending to be Helm.
+- **Effort:** M
+- **Acceptance:** Export downloads valid GPX; import creates marks; disclaimer remains non-plotter.
+- **Peer map:** ActiveCaptain trip plan → plotter; Navionics GPX / Plotter Sync; C-MAP GPX.
+
+#### P1-6 — Forecast Agree / Mixed / Conflict chip
+- **Why:** PredictWind’s multi-model compare is the confidence UX boaters trust when seas are marginal.
+- **Effort:** M
+- **Acceptance:** When buoy vs model wind differ beyond threshold, Leave shows Conflict and will not display pure GO.
+- **Peer map:** PredictWind multi-model Power Planning.
+
+### P2
+
+#### P2-1 — Contextual prompt for draft/margin only on sandbar use
+- **Why:** Navionics-style just-in-time settings beat settings sprawl.
+- **Effort:** S
+- **Acceptance:** First sandbar advisory open asks draft/margin once; subsequent opens reuse Sportsman defaults.
+- **Peer map:** Navionics contextual boat settings.
+
+#### P2-2 — Species season filter chips on Fish grounds map
+- **Why:** Fishbrain species filter is the right Fish-mode lens; keep regs chip Fairwater already plans.
+- **Effort:** S
+- **Acceptance:** Selecting Red Drum filters grounds list/map; closed/uncertain still shows amber Check regs.
+- **Peer map:** Fishbrain species filter (note: theirs is often Pro — Fairwater should keep it free).
+
+#### P2-3 — Strict Run declutter profile
+- **Why:** C-MAP’s “beautiful empty chart” is what owners want at 28 kt.
+- **Effort:** S
+- **Acceptance:** Entering Run hides Fish catch dots, Bite chrome, and community-style clutter; one tap restores.
+- **Peer map:** C-MAP uncluttered charts; TIMEZERO workspace.
+
+---
+
+## Anti-patterns to avoid
+
+| Anti-pattern | Where it shows up | Why it hurts at dock / underway | Fairwater rule |
+| --- | --- | --- | --- |
+| **Hard paywall before value** | Navionics free-trial hard paywall after signup (ScreensDesign) | Owner can’t confirm charts work before committing | Never gate Leave gate, fuel 40/80, or night helm |
+| **Premium for essentials mid-trip** | Fishbrain Pro for depth lines / species filter (field reviews); C-MAP Premium for offline/GPS | Discovering a wall outside cell coverage is worse than no feature | Offline cache + depth advisory stay free for this boat |
+| **Modal nags while navigating** | C-MAP App Store review: rate/feedback popups during nav | Diverting attention underway is unsafe | No ratings, upsells, or location re-prompts in Run |
+| **Repeat permission cancel loops** | ActiveCaptain Play review: cancel location every chart visit | Muscle-memory rage at the helm | One-time location policy; settings toggle only |
+| **Chart clutter by default** | Dense community edits / catch pins / all layers on | Masks channel and sand | Run default = clean; Fish opt-in for catch/grounds density |
+| **Tiny tap targets / imprecise drag on phone** | Navionics route waypoint drag noted awkward on small screens | Wet fingers, bounce, gloves | ≥44px controls; prefer tap-to-add mark over precision drag underway |
+| **Ecosystem-only navigation** | ActiveCaptain marketed as companion, not stand-alone | Useless without Garmin Wi‑Fi at Juan’s dock phone | Fairwater stays useful alone; GPX out, don’t require Helm |
+| **App-hopping for weather** | Common Windy + plotter + tides stack (angler field notes) | Slow leave call; mismatched times/units | Along-run + scrubber inside Leave |
+| **Blocking UI when charts download** | Historical ActiveCaptain sync pain; improved with progress UI in 2026 | Owner stares at spinner at the ramp | Non-blocking banner with %; last-good always usable |
+| **Social / DM noise in a nav context** | Fishbrain stranger DMs for GPS pins | Privacy + distraction | Catch log private by default; no social feed in Run |
+
+---
+
+## Sources
+
+1. Garmin Blog — *Common questions from new ActiveCaptain users* (1 May 2026): https://www.garmin.com/en-GB/blog/common-questions-from-new-activecaptain-users/  
+2. Garmin ActiveCaptain — Google Play listing (features: OneChart, trip plan, Helm, Community, Quickdraw): https://play.google.com/store/apps/details?id=com.garmin.android.marine&hl=en  
+3. Garmin Marine Software Update — June 2026 PDF (transfer size/%, download progress banners): https://www8.garmin.com/marine/PDF/MarineSoftwareUpdate/2026/June2026.pdf  
+4. Garmin Marine Software Update — April 2026 PDF (ActiveCaptain lake-level UX): https://www8.garmin.com/marine/PDF/MarineSoftwareUpdate/2026/April2026.pdf  
+5. Navionics® Boating — App Store description (offline charts, Auto Guidance+, fuel/ETA, night mode, shallow highlight, AIS hazard notifications in release notes): https://apps.apple.com/bm/app/navionics-boating/id744920098  
+6. ScreensDesign — *Navionics® Boating UI Breakdown* (hazard count, contextual boat settings, crosshair, route edit, offline download, hard paywall): https://screensdesign.com/showcase/navionics-boating  
+7. Casual Navigation — *Navionics App: Reviewed By A Professional Navigator* (edge nav chrome, tides/currents interrogation, offline download behavior, limited clutter): https://casualnavigation.com/navionics-app-reviewed-by-a-professional-navigator/  
+8. Fishbrain — Features / BiteGuide (BiteScore 1–10, BiteTime, lure/gameplan breakdown): https://fishbrain.com/features · https://fishbrain.com/blog/fishbrain/introducing-biteguide  
+9. Loup App field review — Fishbrain Pro depth-paywall / vague spots; Navionics offline + shading; Windy for wind (22 Dec 2025): https://www.loupapp.com/i-tried-a-bunch-of-fishing-apps-these-are-the-ones-that-actually-helped-me-catch-fish/  
+10. PredictWind — Departure Planning product page: https://www.predictwind.com/features/departure-planning  
+11. PredictWind Help — *Overview of Departure Planning*: https://help.predictwind.com/en/articles/2884534-overview-of-departure-planning  
+12. PredictWind Help — *How to Interpret Power Planning Results* (multi-model compare, beam %): https://help.predictwind.com/en/articles/10078628-how-to-interpret-power-planning-results  
+13. PredictWind — Google Play listing (routing, departure planning, maps/tables/alerts): https://play.google.com/store/apps/details?id=com.predictwind.mobile.android&hl=en  
+14. WindUp — *PredictWind vs Windy* (task split: PW planning vs Windy map UX; alerts): https://www.windup.live/blog/predictwind-vs-windy/  
+15. Windy Community — *Description of weather overlays* (Wind, Gusts, Waves, etc.): https://community.windy.com/topic/3361/description-of-weather-overlays  
+16. C-MAP: Boating App — App Store (Autorouting, Weather Along the Route, overlay, offline Premium, chart personalisation; user reviews on clutter vs popups): https://apps.apple.com/us/app/c-map-boating/id967289980  
+17. C-MAP App marketing (search/snippet corroboration: 5-day weather along route, custom depth shading, Anchoring Alert) — site fetch blocked by Cloudflare; cross-checked via App Store listing above. Product page: https://www.c-map.com/app/  
+18. TIMEZERO — Chart engine / PhotoFusion / Workspace concept: https://mytimezero.com/chart-engine-and-photofusion  
+
+---
+
+*Report generated 2026-09-23 ET. Every P0 item maps to a verified peer behavior above. No peer features claimed beyond cited sources.*

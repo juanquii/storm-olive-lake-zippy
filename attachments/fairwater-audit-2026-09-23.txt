@@ -1,0 +1,131 @@
+# Fairwater deep audit — 2026-09-23
+
+**Product:** Fairwater (repo folder may be called `fairview`)  
+**Audience:** Juan Necuze · home 70 West / Coral Bay NC · May 2027 Sportsman Open 262 (twin ~200, ~22″ draft, ~160–180 gal) · NC coast / Myrtle Beach / ~40 nm offshore + sandbars  
+**Auditor run:** 2026-09-23 afternoon ET  
+**Dev:** `npm run typecheck` clean · `npm run dev` on `0.0.0.0:8080` HTTP 200 · script tests 187/195 pass (8 pre-existing OG/PWA chrome fails) · Node 20 cannot run `--experimental-strip-types` auth unit tests
+
+---
+
+## 1. What it does today (user-facing map)
+
+| Area | Behavior |
+| --- | --- |
+| **Shell** | Dark fishing-chart chrome · search grounds/fish · Near me · region tabs (NC default) · inshore/nearshore/offshore band chips · resizable desktop panel / mobile bottom sheet |
+| **Map views** | Chart (NOAA ENC WMS) · Satellite · Hybrid (photo + soundings/markers) · Fishing (ocean base + soundings/markers) · Whole coast · Save view (Cache API tiles) · ~3 nm NC state-water dashed line |
+| **Grounds** | 47 curated pins across 7 coasts; NC set includes Beaufort Inlet (default), Bogue, Cape Lookout, Big Rock, Wrightsville, Hatteras, Oregon, Frying Pan, etc. |
+| **Conditions panel** | Bite score + reasons · wind/current/seas/swell compasses · tide curve (NOAA MLLW) · moon + SST · solunar windows · seasonal species/tactics · saved grounds |
+| **Beaufort Inlet gate** | Go / Caution / No-go from NWS CWF (AMZ158), NDBC seas/period, model/buoy wind, ebb×seas rule · editable max seas / min period / max wind |
+| **Cruise / fuel** | Mark mode on chart · waypoint polyline · GPS track record · round-trip fuel from marks · **new:** fixed **40 nm offshore RT** plan + go-home banner |
+| **Brief / regs** | Live NWS coastal waters · NC DMF proclamation titles + Carteret/Onslow shellfish closures (links only) · **new:** last-good brief cache + stale badge |
+| **Catch log** | Species + tide stage + moon + lat/lng (track or inlet) · local persist |
+| **Boat rules** | Zustand persist `fairwater-boat` · **new:** Sportsman Open 262 preset (draft 1.83 ft, tank 170 gal, burn 24 gph, cruise 28 kt, 25% reserve) · draft/reserve editors · Reset 262 preset |
+| **Checklist** | **new:** 8-item pre-launch checklist with persist |
+| **Night helm** | **new:** Moon/Day toggle · red-amber low-glare theme (`html.night-helm`) |
+| **PWA** | Platform manifest / install page via `grok-pwa-plugin` (not a full offline SW for API data) |
+
+**Data sources:** Open-Meteo marine + weather · NOAA CO-OPS tides/currents · NDBC buoy · api.weather.gov CWF · NC DEQ DMF HTML scrape · Esri + NOAA Chart Display tiles.
+
+**Not a nav product:** UI disclaims Garmin/certified use; draft is display-only (not used in gate math); no depth auto-route.
+
+---
+
+## 2. Bugs / polish that block “works perfect”
+
+### P0 (ship blockers for Juan’s boat)
+
+1. **Wrong boat defaults (FIXED this run).** Persisted bay-boat values were `tankGal: 40`, `draftFt: 1.5`, `burnGph: 8`, label “262 bay boat”. That understates range and draft for a Sportsman Open 262 and made fuel math meaningless.
+2. **Gate hard-coded to Beaufort only.** Myrtle Beach / Little River / Masonboro / Bogue bars have no parallel gate profiles; Crystal Coast owner running south still sees “Beaufort Inlet run.”
+3. **Blank chart / missing feeds in some builds.** QA screenshot `app-builder-built.png` showed empty map + Loading/No buoy; `inlet-check.png` worked with tiles + gale No-go. Fragile tile/WMS + buoy path under load or CORS.
+4. **`npm test` script broken on Node 20.** `'scripts/**/*.test.mjs'` does not expand; `--experimental-strip-types` unsupported → auth/app-data tests never run in this sandbox.
+
+### P1 (real-boat friction)
+
+5. **Draft never enters gate or shoal logic** — display only; sandbar / inlet depth clearance not computed.
+6. **No fuel range rings** on the map (only text RT math).
+7. **No GPX / CSV export** for track or waypoints.
+8. **Offline is tile-only.** Conditions/brief need network; last-good brief now helps NWS only.
+9. **Mobile sheet collapses body text** (QA: mobile body 1651 → 331) — conditions peek mode hides the panel.
+10. **`chartOn` in trip store is dead** — unused toggle.
+11. **DMF HTML entity cleaner was a no-op** (FIXED: now decodes `&amp;` / `&#039;` / etc.).
+12. **Waypoint cap 12 / track 400** — fine for day trips, short for multi-day or long troll tracks.
+13. **Catch log has no edit/delete/export.**
+14. **Persist migrate for trip forces outer-banks + beaufort-inlet** every version bump — can surprise travelers.
+
+### P2 (polish)
+
+15. Region id `outer-banks` labeled “North Carolina” (includes Cape Fear / Wrightsville — naming drift).
+16. No Myrtle Beach / Little River / AR-series reefs / Radio Island pins.
+17. No home marina pin for 70 West / Coral Bay.
+18. Compass shows 0° when `deg` is null (arrow hidden, but rotation still 0).
+19. Field inputs use `defaultValue` + `key={value}` — OK, but easy to lose mid-edit on remote patch.
+20. Eight OG/PWA chrome unit tests failing (pre-existing platform chrome, not Fairwater marine logic).
+
+---
+
+## 3. Missing features for a real Sportsman 262 owner (prioritized)
+
+### P0 — next builds
+
+| # | Feature | Why |
+| --- | --- | --- |
+| A | **Inlet/bar gate pack:** Beaufort, Bogue, Masonboro, New River, Little River / Myrtle | Juan’s home bar + south day-runs |
+| B | **Fuel range rings** at cruise burn + reserve on map | Visual go/no-go for 40 nm |
+| C | **Offline conditions snapshot** (last-good conditions JSON + age badge) | Cell dies outside Beaufort |
+| D | **GPX export** (track + marks) | Hand off to Garmin / Coastal Explorer |
+| E | **Home profile:** Coral Bay / 70 West as default home + “run home” ETA | Personal companion, not generic coast |
+
+### P1
+
+| # | Feature | Why |
+| --- | --- | --- |
+| F | Sportsman 262 **boat card** (engines, draft inches, tank options 150/170/182) | Match build sheet at delivery |
+| G | **Shoal / draft clearance** hint vs chart sounding (advisory only) | Sandbars around Lookout / Bogue |
+| H | **NOAA marine point forecast** panels beyond AMZ158 slice | Offshore 40 nm |
+| I | **True PWA offline** for brief + last conditions + checklist | Helm phone |
+| J | **Float-plan SMS/share sheet** | Checklist item → one tap |
+| K | Catch log **photo + length + export CSV** | Season patterns |
+
+### P2
+
+| # | Feature | Why |
+| --- | --- | --- |
+| L | AIS / vessel traffic overlay (read-only) | Shipping channel at Beaufort |
+| M | Live bait / ramp / fuel dock pins (Crystal Coast) | Day logistics |
+| N | Tournament / Big Rock mode | June blue-water |
+| O | Multi-crew shared marks (optional later) | Family boat |
+
+---
+
+## 4. Fixes applied this run
+
+| Change | File(s) |
+| --- | --- |
+| Sportsman Open 262 defaults: draft **1.83 ft (22″)**, tank **170 gal**, burn **24 gph**, cruise **28 kt**, reserve **25%**, seas **3.5 ft**; persist **v2 migrate** replaces legacy 40/1.5/8 | `src/store/boat.ts` |
+| Label + draft inches; draft/reserve fields; **Reset 262 preset** | `src/components/fairwater/cruise.tsx` |
+| **40 nm offshore RT** fuel card + **GO HOME** banner when burn > usable | `cruise.tsx` + `planFuelNm` / `OFFSHORE_RT_NM` |
+| **Pre-launch checklist** (8 items) with persist | `boat.ts` + `cruise.tsx` |
+| **Last-good NWS brief** cache + **Stale** badge | `cruise.tsx` |
+| **Night helm UI** toggle + red-amber theme | `app.tsx` + `styles.css` |
+| DMF `clean()` HTML entity decode | `src/lib/marine/brief.ts` |
+| `startup.sh` cds to `/workspace/fairview` and starts `npm run dev` | `startup.sh` (+ `/workspace/startup.sh`) |
+
+**Not done (listed, not rewritten):** multi-inlet gates, range rings, GPX, Myrtle/Little River grounds, full offline conditions, draft-vs-sounding math.
+
+---
+
+## 5. Recommended next builds (ordered)
+
+1. **Inlet gate pack** (Beaufort default + Bogue / Masonboro / Little River) sharing `inletGate` rules + local tide/current stations.  
+2. **Map fuel range ring** from selected ground or GPS using Sportsman 262 burn/tank/reserve.  
+3. **GPX download** for track + waypoints.  
+4. **Persist last-good `getConditions`** with stale badge (mirror brief).  
+5. **Grounds:** Little River Inlet, Myrtle Beach nearshore, Coral Bay home, Morehead AR reefs.  
+6. Harden NOAA WMS + buoy fallbacks; add Playwright smoke for Chart / Hybrid / inlet gate.  
+7. Fix `package.json` `test` script for Node 20 (drop strip-types or bump Node ≥22.12).
+
+---
+
+## 6. Exec one-liner for the room
+
+Fairwater is already a strong Crystal Coast trip companion (NOAA chart, Beaufort gate, tides, bite, DMF links); today’s P0 pass locks **Sportsman Open 262 fuel/draft**, adds **40 nm go-home fuel**, **checklist**, **stale NWS cache**, and **night helm** — next ship the **multi-inlet gates + range rings + GPX** so it feels like Juan’s May 2027 boat, not a generic fishing map.
