@@ -11,7 +11,7 @@ import { BAND_BLURB, BAND_LABEL, GROUNDS, REGIONS, groundById, groundsIn } from 
 import { miles, nearest } from "@/lib/marine/geo";
 import { inletById, marinaById } from "@/lib/marine/inlets";
 import type { Band, RegionId } from "@/lib/marine/types";
-import { OFFSHORE_ONE_WAY_NM, planFuelNm, SILVERTON_38_ACMY, SPORTSMAN_262, useBoat } from "@/store/boat";
+import { OFFSHORE_ONE_WAY_NM, boatBandFit, planFuelNm, SILVERTON_38_ACMY, SPORTSMAN_262, useBoat } from "@/store/boat";
 import { useTrip, type ChartView } from "@/store/trip";
 import { cn } from "@/lib/cn";
 
@@ -90,8 +90,25 @@ function Fairwater() {
   const homeMarinaId = useBoat((s) => s.homeMarinaId);
   const activeInletId = useBoat((s) => s.activeInletId);
   const boatLabel = useBoat((s) => s.boatLabel);
+  const draftFt = useBoat((s) => s.draftFt);
+  const maxSeasFt = useBoat((s) => s.maxSeasFt);
   const applySportsman262 = useBoat((s) => s.applySportsman262);
   const applySilverton38Acmy = useBoat((s) => s.applySilverton38Acmy);
+  const [boatFlash, setBoatFlash] = useState(false);
+  const boatFlashTimer = useRef<number | null>(null);
+
+  function applyBoatPreset(apply: () => void) {
+    apply();
+    setBoatFlash(true);
+    if (boatFlashTimer.current != null) window.clearTimeout(boatFlashTimer.current);
+    boatFlashTimer.current = window.setTimeout(() => setBoatFlash(false), 900);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (boatFlashTimer.current != null) window.clearTimeout(boatFlashTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     void useBoat.persist.rehydrate();
@@ -264,6 +281,8 @@ function Fairwater() {
   const home = marinaById(homeMarinaId);
   const inlet = inletById(activeInletId);
   const fuelPlan = planFuelNm(OFFSHORE_ONE_WAY_NM, cruiseKt, burnGph, tankGal, reservePct);
+  const nmPerGal = burnGph > 0 ? cruiseKt / burnGph : 0;
+  const bandFit = boatBandFit(draftFt, maxSeasFt, burnGph);
   const homeNm = home ? miles(inlet.lat, inlet.lng, home.lat, home.lng) * 0.868976 : null;
   const homeMin = homeNm == null ? null : (homeNm / Math.max(cruiseKt, 1)) * 60;
 
@@ -585,42 +604,67 @@ function Fairwater() {
               ))}
             </div>
           ) : null}
-          {/* Leave peek: boat preset — one compact control, Leave only */}
+          {/* Leave peek: boat preset + live summary / band fit — Leave only */}
           {helmMode === "leave" ? (
             <div
               className={cn(
-                "grid grid-cols-2 gap-1 border-t border-line px-2 py-1",
+                "border-t border-line px-2 py-1",
                 sheet !== "peek" && "max-sm:hidden",
               )}
               role="group"
               aria-label="Boat preset"
             >
-              <button
-                type="button"
-                aria-pressed={boatLabel === SPORTSMAN_262.boatLabel || boatLabel === "Sportsman Open 262"}
-                onClick={() => applySportsman262()}
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  aria-pressed={boatLabel === SPORTSMAN_262.boatLabel || boatLabel === "Sportsman Open 262"}
+                  onClick={() => applyBoatPreset(applySportsman262)}
+                  className={cn(
+                    "min-h-9 rounded-md border px-1.5 text-xs font-medium sm:text-sm",
+                    boatLabel === SPORTSMAN_262.boatLabel || boatLabel === "Sportsman Open 262"
+                      ? "border-accent bg-surface-2 text-fg"
+                      : "border-line bg-bg text-muted",
+                  )}
+                >
+                  Sportsman 262
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={boatLabel === SILVERTON_38_ACMY.boatLabel}
+                  onClick={() => applyBoatPreset(applySilverton38Acmy)}
+                  className={cn(
+                    "min-h-9 rounded-md border px-1.5 text-xs font-medium sm:text-sm",
+                    boatLabel === SILVERTON_38_ACMY.boatLabel
+                      ? "border-accent bg-surface-2 text-fg"
+                      : "border-line bg-bg text-muted",
+                  )}
+                >
+                  38′ Silverton ACMY
+                </button>
+              </div>
+              <div
                 className={cn(
-                  "min-h-9 rounded-md border px-1.5 text-xs font-medium sm:text-sm",
-                  boatLabel === SPORTSMAN_262.boatLabel || boatLabel === "Sportsman Open 262"
-                    ? "border-accent bg-surface-2 text-fg"
-                    : "border-line bg-bg text-muted",
+                  "mt-1 rounded-md px-1.5 py-1 transition-colors",
+                  boatFlash ? "bg-accent/20 ring-1 ring-accent" : "bg-transparent",
                 )}
+                aria-live="polite"
               >
-                Sportsman 262
-              </button>
-              <button
-                type="button"
-                aria-pressed={boatLabel === SILVERTON_38_ACMY.boatLabel}
-                onClick={() => applySilverton38Acmy()}
-                className={cn(
-                  "min-h-9 rounded-md border px-1.5 text-xs font-medium sm:text-sm",
-                  boatLabel === SILVERTON_38_ACMY.boatLabel
-                    ? "border-accent bg-surface-2 text-fg"
-                    : "border-line bg-bg text-muted",
-                )}
-              >
-                38′ Silverton ACMY
-              </button>
+                <p className="text-[10px] leading-snug text-fg sm:text-xs">
+                  <span className="font-medium">{boatLabel}</span>
+                  {" · draft "}
+                  {draftFt.toFixed(2)} ft (~{Math.round(draftFt * 12)}″)
+                  {" · tank "}
+                  {tankGal} gal · cruise {cruiseKt} kt · burn {burnGph} gph
+                  {" · ~"}
+                  {nmPerGal.toFixed(1)} nm/gal · 40 out / {fuelPlan.nm.toFixed(0)} RT ~{fuelPlan.gallons.toFixed(0)} gal
+                  {fuelPlan.home ? " · HOME OK" : " · GO HOME"}
+                </p>
+                <ul className="mt-0.5 flex flex-col gap-0.5 text-[10px] leading-snug text-muted sm:text-xs">
+                  <li>{bandFit.icw}</li>
+                  <li>{bandFit.nearshore}</li>
+                  <li>{bandFit.offshore}</li>
+                </ul>
+              </div>
             </div>
           ) : null}
           {/* Thin edge strip: SOG · home nm · fuel · advisories chip */}

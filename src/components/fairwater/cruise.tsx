@@ -478,7 +478,8 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
         </div>
         <p className="mt-2 text-sm text-muted">{inlet.notes}</p>
         <p className="mt-1 text-sm text-muted">
-          {boat.boatLabel} · draft {boat.draftFt.toFixed(2)} ft (~{Math.round(boat.draftFt * 12)}″) · not a navigation clearance
+          {boat.boatLabel} · draft {boat.draftFt.toFixed(2)} ft (~{Math.round(boat.draftFt * 12)}″) · tank {boat.tankGal} gal · cruise{" "}
+          {boat.cruiseKt} kt · burn {boat.burnGph} gph · not a navigation clearance
         </p>
         <ul className="mt-3 flex flex-col gap-1 text-sm text-fg">
           {shown.reasons.map((reason) => (

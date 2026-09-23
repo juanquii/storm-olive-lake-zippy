@@ -177,6 +177,26 @@ export function planFuelNm(
   };
 }
 
+
+/** Plain judgment from draft + maxSeasFt + burn — ICW / nearshore / offshore fit chips. */
+export function boatBandFit(draftFt: number, maxSeasFt: number, burnGph: number) {
+  const draftIn = Math.round(draftFt * 12);
+  const draftLabel = `~${draftFt.toFixed(1)} ft (${draftIn}″)`;
+  const icw =
+    draftFt < 2.5
+      ? `ICW / inshore · ${draftLabel} OK — shallow draft freer`
+      : `ICW / inshore · ${draftLabel} constrained / watch soundings`;
+  const nearshore =
+    maxSeasFt < 4
+      ? `Nearshore · usable · mind seas (~${maxSeasFt} ft limit)`
+      : `Nearshore · usable · roomier seas (~${maxSeasFt} ft)`;
+  const offshore =
+    burnGph <= 20 || maxSeasFt <= 4
+      ? `Offshore · lighter seas limit (~${maxSeasFt} ft)`
+      : `Offshore · seas ~${maxSeasFt} ft · larger fuel but higher burn (${burnGph} gph)`;
+  return { icw, nearshore, offshore };
+}
+
 export function routeFuel(
   marks: { lat: number; lng: number }[],
   cruiseKt: number,
