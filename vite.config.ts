@@ -151,7 +151,7 @@ export default defineConfig(({ command, isPreview }) => ({
     port: 8080,
     strictPort: true,
     // Phone preview tunnels (cloudflared quick tunnels).
-    allowedHosts: [".trycloudflare.com", "localhost"],
+    allowedHosts: true,
   },
   preview: {
     host: "127.0.0.1",

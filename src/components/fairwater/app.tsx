@@ -10,7 +10,7 @@ import { BAND_BLURB, BAND_LABEL, GROUNDS, REGIONS, groundById, groundsIn } from 
 import { miles, nearest } from "@/lib/marine/geo";
 import { inletById, marinaById } from "@/lib/marine/inlets";
 import type { Band, RegionId } from "@/lib/marine/types";
-import { OFFSHORE_ONE_WAY_NM, planFuelNm, useBoat } from "@/store/boat";
+import { OFFSHORE_ONE_WAY_NM, planFuelNm, SILVERTON_38_ACMY, SPORTSMAN_262, useBoat } from "@/store/boat";
 import { useTrip, type ChartView } from "@/store/trip";
 import { cn } from "@/lib/cn";
 
@@ -88,6 +88,9 @@ function Fairwater() {
   const reservePct = useBoat((s) => s.reservePct);
   const homeMarinaId = useBoat((s) => s.homeMarinaId);
   const activeInletId = useBoat((s) => s.activeInletId);
+  const boatLabel = useBoat((s) => s.boatLabel);
+  const applySportsman262 = useBoat((s) => s.applySportsman262);
+  const applySilverton38Acmy = useBoat((s) => s.applySilverton38Acmy);
 
   useEffect(() => {
     void useBoat.persist.rehydrate();
@@ -560,6 +563,44 @@ function Fairwater() {
                   <span className="block truncate text-[10px] text-muted sm:text-xs">{opt.summary}</span>
                 </button>
               ))}
+            </div>
+          ) : null}
+          {/* Leave peek: boat preset — one compact control, Leave only */}
+          {helmMode === "leave" ? (
+            <div
+              className={cn(
+                "grid grid-cols-2 gap-1 border-t border-line px-2 py-1",
+                sheet !== "peek" && "max-sm:hidden",
+              )}
+              role="group"
+              aria-label="Boat preset"
+            >
+              <button
+                type="button"
+                aria-pressed={boatLabel === SPORTSMAN_262.boatLabel || boatLabel === "Sportsman Open 262"}
+                onClick={() => applySportsman262()}
+                className={cn(
+                  "min-h-9 rounded-md border px-1.5 text-xs font-medium sm:text-sm",
+                  boatLabel === SPORTSMAN_262.boatLabel || boatLabel === "Sportsman Open 262"
+                    ? "border-accent bg-surface-2 text-fg"
+                    : "border-line bg-bg text-muted",
+                )}
+              >
+                Sportsman 262
+              </button>
+              <button
+                type="button"
+                aria-pressed={boatLabel === SILVERTON_38_ACMY.boatLabel}
+                onClick={() => applySilverton38Acmy()}
+                className={cn(
+                  "min-h-9 rounded-md border px-1.5 text-xs font-medium sm:text-sm",
+                  boatLabel === SILVERTON_38_ACMY.boatLabel
+                    ? "border-accent bg-surface-2 text-fg"
+                    : "border-line bg-bg text-muted",
+                )}
+              >
+                38′ Silverton ACMY
+              </button>
             </div>
           ) : null}
           {/* Thin edge strip: SOG · home nm · fuel · advisories chip */}

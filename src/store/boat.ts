@@ -17,7 +17,7 @@ export type CatchLog = {
 
 /** Sportsman Open 262 · twin ~F200 · ~22" draft · ~150–182 gal usable tank. */
 export const SPORTSMAN_262 = {
-  boatLabel: "Sportsman Open 262",
+  boatLabel: "Sportsman Open 262 CC",
   draftFt: 1.83,
   cruiseKt: 28,
   burnGph: 15,
@@ -27,6 +27,20 @@ export const SPORTSMAN_262 = {
   maxSeasFt: 3.5,
   minPeriodS: 6,
   maxWindMph: 18,
+} as const;
+
+/** 38′ Silverton ACMY · draft 4′2″ max (38C manual) · 360 gal · published diesel cruise ~22.9 kt / ~34 gph. */
+export const SILVERTON_38_ACMY = {
+  boatLabel: "38′ Silverton ACMY",
+  draftFt: 4.17,
+  tankGal: 360,
+  cruiseKt: 23,
+  burnGph: 34,
+  planningBurnGph: 39,
+  reservePct: 25,
+  maxSeasFt: 5,
+  minPeriodS: 6,
+  maxWindMph: 22,
 } as const;
 
 /** One-way offshore planning leg (nm). planFuelNm doubles this for round-trip. Juan: 40 out / 80 RT. */
@@ -80,6 +94,7 @@ type BoatState = {
   nightHelm: boolean;
   setRule: (patch: Partial<Pick<BoatState, RuleKeys>>) => void;
   applySportsman262: () => void;
+  applySilverton38Acmy: () => void;
   setHomeMarina: (id: MarinaId | null) => void;
   setActiveInlet: (id: InletId) => void;
   setPlanningBurn: (gph: number) => void;
@@ -208,6 +223,7 @@ export const useBoat = create<BoatState>()(
       nightHelm: false,
       setRule: (patch) => set(patch),
       applySportsman262: () => set({ ...SPORTSMAN_262 }),
+      applySilverton38Acmy: () => set({ ...SILVERTON_38_ACMY }),
       setHomeMarina: (homeMarinaId) => set({ homeMarinaId }),
       setActiveInlet: (activeInletId) => set({ activeInletId }),
       setPlanningBurn: (planningBurnGph) => set({ planningBurnGph }),

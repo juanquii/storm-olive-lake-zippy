@@ -518,16 +518,9 @@ export function CruiseBoard({ mode = "leave" }: { mode?: HelmMode }) {
           <Field label="Min period" value={boat.minPeriodS} suffix="s" onChange={(v) => boat.setRule({ minPeriodS: num(v, boat.minPeriodS) })} />
           <Field label="Max wind" value={boat.maxWindMph} suffix="mph" onChange={(v) => boat.setRule({ maxWindMph: num(v, boat.maxWindMph) })} />
         </div>
-        <div className="mt-2 grid grid-cols-3 gap-2">
+        <div className="mt-2 grid grid-cols-2 gap-2">
           <Field label="Draft" value={boat.draftFt} suffix="ft" onChange={(v) => boat.setRule({ draftFt: num(v, boat.draftFt) })} />
           <Field label="Reserve" value={boat.reservePct} suffix="%" onChange={(v) => boat.setRule({ reservePct: num(v, boat.reservePct) })} />
-          <button
-            type="button"
-            className="mt-4 h-12 rounded-md bg-surface-2 px-2 text-xs font-medium text-fg"
-            onClick={() => boat.applySportsman262()}
-          >
-            Reset 262 preset
-          </button>
         </div>
         <p className="mt-3 text-sm text-muted">Still your call at the dock.</p>
         {conditionsStale ? (
