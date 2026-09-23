@@ -9,12 +9,17 @@ export function TideChart({ samples, now }: { samples: Point[]; now: number }) {
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    const measure = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      // Ignore 0×0 while the panel is peek-hidden; remasure when it becomes visible again.
+      if (w > 0 && h > 0) setSize({ w, h });
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [samples, now]);
   const from = now - 2 * 3600000;
   const to = now + 22 * 3600000;
   const data = samples

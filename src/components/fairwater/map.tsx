@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { LayerGroup, Map as LeafletMap, TileLayer } from "leaflet";
+import type { LayerGroup, Map as LeafletMap, Renderer, TileLayer } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { bearing, miles } from "@/lib/marine/geo";
 import { groundById, groundsIn } from "@/lib/marine/grounds";
@@ -35,6 +35,9 @@ const FILL: Record<Band, string> = {
   nearshore: "#1d4e89",
   offshore: "#3d4c7c",
 };
+
+/** Depth numbers / channel markers — match UI copy that gates below z12. */
+const DEPTH_OVERLAY_MIN_ZOOM = 12;
 
 type Props = {
   region: RegionId | "all";
@@ -155,6 +158,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
   const chartRef = useRef<TileLayer | null>(null);
   const baseRef = useRef<TileLayer | null>(null);
   const overlayRef = useRef<TileLayer | null>(null);
+  const canvasRef = useRef<Renderer | null>(null);
   const viewRef = useRef(chartView);
   viewRef.current = chartView;
   const selectRef = useRef(onSelect);
@@ -197,6 +201,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
     if (!el) return;
     let alive = true;
     let map: LeafletMap | null = null;
+    let zoomSettleTimer: number | undefined;
 
     (async () => {
       const leaflet = await import("leaflet");
@@ -258,6 +263,11 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
           const canvas = document.createElement("canvas");
           canvas.width = 256;
           canvas.height = 256;
+          // Skip WMS + keepSoundings below the depth-number threshold — empty tile until zoom settles at z12+.
+          if (coords.z < DEPTH_OVERLAY_MIN_ZOOM) {
+            done(undefined, canvas);
+            return canvas;
+          }
           void (async () => {
             try {
               const depthBlob = await fetchOverlay(wmsUrl("2", coords.x, coords.y, coords.z));
@@ -286,11 +296,41 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
         },
       });
       const OverlayLayer = Overlay as new (options: Record<string, unknown>) => TileLayer;
-      overlayRef.current = new OverlayLayer({ maxZoom: 18, attribution: "NOAA" });
+      // updateWhenIdle: paint heavy depth tiles only after zoom/pan settles (no mid-gesture redraw).
+      overlayRef.current = new OverlayLayer({
+        maxZoom: 18,
+        minZoom: DEPTH_OVERLAY_MIN_ZOOM,
+        updateWhenIdle: true,
+        updateWhenZooming: false,
+        attribution: "NOAA",
+      });
+      canvasRef.current = L.canvas({ padding: 0.5 });
       groupRef.current = L.layerGroup().addTo(map);
       navRef.current = L.layerGroup().addTo(map);
+      map.on("zoomstart", () => {
+        if (zoomSettleTimer) window.clearTimeout(zoomSettleTimer);
+        const live = mapRef.current;
+        const overlay = overlayRef.current;
+        // Hide heavy overlay mid-gesture so keepSoundings work does not run during pinch/zoom.
+        if (live && overlay && live.hasLayer(overlay)) live.removeLayer(overlay);
+      });
       map.on("zoomend", () => {
-        if (map) setZoom(map.getZoom());
+        if (!map) return;
+        const z = map.getZoom();
+        setZoom(z);
+        if (zoomSettleTimer) window.clearTimeout(zoomSettleTimer);
+        zoomSettleTimer = window.setTimeout(() => {
+          const overlay = overlayRef.current;
+          if (!overlay || !mapRef.current) return;
+          const view = viewRef.current;
+          const wantsOverlay = view === "hybrid" || view === "fishing";
+          if (wantsOverlay && z >= DEPTH_OVERLAY_MIN_ZOOM) {
+            if (!mapRef.current.hasLayer(overlay)) overlay.addTo(mapRef.current);
+            else overlay.redraw();
+          } else if (mapRef.current.hasLayer(overlay)) {
+            mapRef.current.removeLayer(overlay);
+          }
+        }, 120);
       });
       mapRef.current = map;
       map.invalidateSize();
@@ -308,6 +348,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
 
     return () => {
       alive = false;
+      if (zoomSettleTimer) window.clearTimeout(zoomSettleTimer);
       map?.remove();
       mapRef.current = null;
       groupRef.current = null;
@@ -315,6 +356,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
       chartRef.current = null;
       baseRef.current = null;
       overlayRef.current = null;
+      canvasRef.current = null;
       setBooted(false);
     };
     // The chart should open on the inlet already selected, then stay put while the user pans.
@@ -329,6 +371,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
       const L = leaflet.default;
       if (cancelled || !groupRef.current) return;
       groupRef.current.clearLayers();
+      const renderer = canvasRef.current ?? undefined;
       for (const ground of groundsIn(region, band)) {
         const selected = ground.id === selectedId;
         const marker = L.circleMarker([ground.lat, ground.lng], {
@@ -337,6 +380,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
           weight: 2,
           fillColor: selected ? "#f4f1e8" : FILL[ground.band],
           fillOpacity: 1,
+          renderer,
         });
         marker.on("click", (event) => {
           L.DomEvent.stopPropagation(event);
@@ -399,6 +443,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
       if (cancelled || !navRef.current) return;
       const L = leaflet.default;
       navRef.current.clearLayers();
+      const renderer = canvasRef.current ?? undefined;
       if (region === "outer-banks") {
         L.polyline(STATE_LINE, { color: "#8a6844", weight: 2, dashArray: "6 6" })
           .bindTooltip("Approximate 3 nm state line. Inside is state water, outside is federal. Not a legal boundary.", {
@@ -425,17 +470,18 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
           weight: 2,
           fillColor: "#d4b483",
           fillOpacity: 1,
+          renderer,
         })
           .bindTooltip(mark.name, { permanent: true, direction: "top", className: "fw-label" })
           .addTo(navRef.current);
       }
       const inlet = inletById(activeInletId);
       const home = marinaById(homeMarinaId);
-      L.circleMarker([inlet.lat, inlet.lng], { radius: 8, color: "#8a3030", weight: 2, fillColor: "#d9897b", fillOpacity: 1 })
+      L.circleMarker([inlet.lat, inlet.lng], { radius: 8, color: "#8a3030", weight: 2, fillColor: "#d9897b", fillOpacity: 1, renderer })
         .bindTooltip(inlet.name, { permanent: true, direction: "right", className: "fw-label" })
         .addTo(navRef.current);
       if (home) {
-        L.circleMarker([home.lat, home.lng], { radius: 8, color: "#102028", weight: 2, fillColor: "#f4f1e8", fillOpacity: 1 })
+        L.circleMarker([home.lat, home.lng], { radius: 8, color: "#102028", weight: 2, fillColor: "#f4f1e8", fillOpacity: 1, renderer })
           .bindTooltip(home.name, { permanent: true, direction: "left", className: "fw-label" })
           .addTo(navRef.current);
       }
@@ -492,8 +538,13 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
       if (map.hasLayer(overlay)) map.removeLayer(overlay);
     } else {
       if (map.hasLayer(chart)) map.removeLayer(chart);
-      if (!map.hasLayer(overlay)) overlay.addTo(map);
-      overlay.redraw();
+      // Heavy depth overlay only at z12+ and after idle — aligns with depth-number UI copy.
+      if (map.getZoom() >= DEPTH_OVERLAY_MIN_ZOOM) {
+        if (!map.hasLayer(overlay)) overlay.addTo(map);
+        overlay.redraw();
+      } else if (map.hasLayer(overlay)) {
+        map.removeLayer(overlay);
+      }
     }
     if (groupRef.current) {
       groupRef.current.remove();
@@ -647,7 +698,7 @@ export function FishingMap({ region, band, selectedId, chartView, helmMode, onSe
         <p className="absolute bottom-7 left-3 z-[1000] max-w-[16rem] rounded-md bg-surface/95 px-2 py-1 text-xs text-muted">
           Photo only. No depths and no buoys on this view.
         </p>
-      ) : zoom < 12 ? (
+      ) : zoom < DEPTH_OVERLAY_MIN_ZOOM ? (
         <p className="absolute bottom-7 left-3 z-[1000] max-w-[16rem] rounded-md bg-surface/95 px-2 py-1 text-xs text-muted">
           Zoom in for depth numbers and the red and green channel markers.
         </p>

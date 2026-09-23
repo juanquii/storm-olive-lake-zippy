@@ -26,7 +26,7 @@ const LAYOUT_KEY = "fairwater-layout";
 function readLayout(): { panelPx: number; sheet: "peek" | "open"; tools: boolean } {
   try {
     const raw = localStorage.getItem(LAYOUT_KEY);
-    if (!raw) return { panelPx: 448, sheet: "open", tools: false };
+    if (!raw) return { panelPx: 448, sheet: "peek", tools: false };
     const parsed = JSON.parse(raw) as { panelPx?: unknown; sheet?: unknown; tools?: unknown };
     const panelPx = Number(parsed.panelPx);
     return {
@@ -35,7 +35,7 @@ function readLayout(): { panelPx: number; sheet: "peek" | "open"; tools: boolean
       tools: parsed.tools === true,
     };
   } catch {
-    return { panelPx: 448, sheet: "open", tools: false };
+    return { panelPx: 448, sheet: "peek", tools: false };
   }
 }
 
@@ -65,7 +65,7 @@ function Fairwater() {
   const [geoNote, setGeoNote] = useState<string | null>(null);
   const [live, setLive] = useState(false);
   const [panelPx, setPanelPx] = useState(448);
-  const [sheet, setSheet] = useState<"peek" | "open">("open");
+  const [sheet, setSheet] = useState<"peek" | "open">("peek");
   const [toolsOpen, setToolsOpen] = useState(false);
   const [layoutReady, setLayoutReady] = useState(false);
   const [gateLabel, setGateLabel] = useState<string | null>(null);
@@ -129,7 +129,7 @@ function Fairwater() {
 
   useEffect(() => {
     panelRef.current?.scrollTo({ top: 0 });
-  }, [helmMode]);
+  }, [helmMode, sheet]);
 
   const month = live ? new Date().getMonth() + 1 : 0;
   const hits = useMemo(() => {
@@ -164,6 +164,23 @@ function Fairwater() {
     setGeoNote(null);
   }
 
+  function chooseBand(b: Band) {
+    const next = band === b ? "all" : b;
+    setBand(next);
+    if (next === "all") return;
+    const current = GROUNDS.find((g) => g.id === groundId);
+    if (!current || current.band !== next) {
+      const pick = groundsIn(region, next)[0];
+      if (pick) setGround(pick.id);
+    }
+  }
+
+  /** Map-first: Leave / Run / Fish all default to peek so the chart keeps majority height. */
+  function setMode(id: "leave" | "run" | "fish") {
+    setHelmMode(id);
+    setSheet("peek");
+  }
+
   function nearMe() {
     if (!navigator.geolocation) {
       setGeoNote("This browser won't share a location.");
@@ -194,10 +211,6 @@ function Fairwater() {
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-bg text-fg">
       <header className="border-b border-line">
-        <div className="flex items-baseline justify-between px-3 pt-3 sm:hidden">
-          <p className="font-display text-xl leading-none tracking-tight">Fairwater</p>
-          <p className="text-xs text-muted">Fishing chart</p>
-        </div>
         <div className="flex items-center gap-2 px-3 py-2 lg:gap-3 lg:px-4">
         <div className="hidden shrink-0 sm:block">
           <p className="font-display text-xl leading-none tracking-tight">Fairwater</p>
@@ -247,11 +260,12 @@ function Fairwater() {
           onClick={() => setNightHelm(!nightHelm)}
           aria-label={nightHelm ? "Day UI" : "Night helm UI"}
           aria-pressed={nightHelm}
+          className="hidden sm:inline-flex"
         >
           {nightHelm ? <Sun className="size-4" /> : <Moon className="size-4" />}
           <span className="hidden md:inline">{nightHelm ? "Day" : "Night"}</span>
         </Button>
-        <Button variant="quiet" onClick={nearMe} aria-label="Use my location">
+        <Button variant="quiet" onClick={nearMe} aria-label="Use my location" className="hidden sm:inline-flex">
           <LocateFixed className="size-4" />
           <span className="hidden md:inline">Near me</span>
         </Button>
@@ -296,16 +310,7 @@ function Fairwater() {
                 <button
                   key={b}
                   type="button"
-                  onClick={() => {
-                    const next = band === b ? "all" : b;
-                    setBand(next);
-                    if (next === "all") return;
-                    const current = GROUNDS.find((g) => g.id === groundId);
-                    if (!current || current.band !== next) {
-                      const pick = groundsIn(region, next)[0];
-                      if (pick) setGround(pick.id);
-                    }
-                  }}
+                  onClick={() => chooseBand(b)}
                   className={cn("h-12 rounded-md border px-3 text-left text-sm", band === b ? "border-accent bg-surface-2" : "border-line")}
                 >
                   {BAND_LABEL[b]}
@@ -329,6 +334,25 @@ function Fairwater() {
                 </button>
               ))}
               <p className="text-sm text-muted">{CHART_VIEWS.find((view) => view.id === chartView)?.note}</p>
+            </div>
+            <div className="flex flex-col gap-2 border-t border-line px-3 py-2 sm:hidden">
+              <button
+                type="button"
+                onClick={() => setNightHelm(!nightHelm)}
+                className="h-12 rounded-md bg-surface-2 px-3 text-left text-sm font-medium text-fg"
+              >
+                {nightHelm ? "Day UI" : "Night helm"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  nearMe();
+                  setToolsOpen(false);
+                }}
+                className="h-12 rounded-md bg-surface-2 px-3 text-left text-sm font-medium text-fg"
+              >
+                Near me
+              </button>
             </div>
           </div>
         </div>
@@ -361,6 +385,7 @@ function Fairwater() {
 
       {geoNote ? <p className="border-b border-line px-4 py-2 text-sm text-muted">{geoNote}</p> : null}
 
+      {/* Desktop helm */}
       <div className="hidden grid-cols-3 gap-2 border-b border-line px-3 py-2 lg:grid" role="tablist" aria-label="Helm mode">
         {(
           [
@@ -374,10 +399,7 @@ function Fairwater() {
             type="button"
             role="tab"
             aria-selected={helmMode === id}
-            onClick={() => {
-              setHelmMode(id);
-              setSheet(id === "run" ? "peek" : "open");
-            }}
+            onClick={() => setMode(id)}
             className={cn(
               "h-12 rounded-md text-sm font-medium",
               helmMode === id ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted",
@@ -388,55 +410,51 @@ function Fairwater() {
         ))}
       </div>
 
-      <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="hidden grid-cols-3 gap-2 border-b border-line px-3 py-2 lg:grid">
-            {(["inshore", "nearshore", "offshore"] as const).map((b) => (
-              <button
-                key={b}
-                type="button"
-                onClick={() => {
-                  const next = band === b ? "all" : b;
-                  setBand(next);
-                  if (next === "all") return;
-                  const current = GROUNDS.find((g) => g.id === groundId);
-                  if (!current || current.band !== next) {
-                    const pick = groundsIn(region, next)[0];
-                    if (pick) setGround(pick.id);
-                  }
-                }}
-                className={cn(
-                  "min-h-12 rounded-lg border px-2 py-1.5 text-left",
-                  band === b ? "border-accent bg-surface-2" : "border-line bg-bg",
-                )}
-              >
-                <span className="block text-xs font-medium tracking-wide text-subtle uppercase">{BAND_LABEL[b]}</span>
-                <span className="block truncate text-sm text-fg">
-                  {live && month ? seasonNames(region, b, month) : BAND_BLURB[b]}
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="hidden gap-2 overflow-x-auto border-b border-line px-3 py-2 lg:flex" role="tablist" aria-label="Map view">
-            {CHART_VIEWS.map((view) => (
-              <button
-                key={view.id}
-                type="button"
-                role="tab"
-                aria-selected={chartView === view.id}
-                onClick={() => setChartView(view.id)}
-                className={cn(
-                  "h-12 shrink-0 rounded-md px-3 text-sm font-medium",
-                  chartView === view.id ? "bg-accent text-accent-fg" : "text-muted hover:bg-surface-2",
-                )}
-              >
-                {view.label}
-              </button>
-            ))}
-          </div>
-          <p className="hidden border-b border-line px-3 py-1.5 text-xs text-muted lg:block">
-            {CHART_VIEWS.find((view) => view.id === chartView)?.note}
-          </p>
+      {/* Tablet: Leave/Run/Fish + bands in one row */}
+      <div className="hidden items-center gap-2 overflow-x-auto border-b border-line px-3 py-2 sm:max-lg:flex">
+        <div className="flex shrink-0 gap-1" role="tablist" aria-label="Helm mode">
+          {(
+            [
+              ["leave", "Leave"],
+              ["run", "Run"],
+              ["fish", "Fish"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={helmMode === id}
+              onClick={() => setMode(id)}
+              className={cn(
+                "h-12 rounded-md px-3 text-sm font-medium",
+                helmMode === id ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="mx-1 h-8 w-px shrink-0 bg-line" aria-hidden />
+        <div className="flex min-w-0 flex-1 gap-1">
+          {(["inshore", "nearshore", "offshore"] as const).map((b) => (
+            <button
+              key={b}
+              type="button"
+              onClick={() => chooseBand(b)}
+              className={cn(
+                "h-12 min-w-0 flex-1 truncate rounded-md border px-2 text-sm font-medium",
+                band === b ? "border-accent bg-surface-2 text-fg" : "border-line text-muted",
+              )}
+            >
+              {BAND_LABEL[b]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="relative flex min-h-0 flex-1 flex-col sm:flex-row">
+        <div className="flex min-h-[52%] flex-1 flex-col sm:min-h-0 sm:w-[60%] sm:flex-none lg:w-auto lg:flex-1">
           <div className="relative min-h-[160px] min-w-0 flex-1">
             <FishingMap
               region={region}
@@ -450,12 +468,13 @@ function Fairwater() {
               }}
             />
           </div>
-          {helmMode === "run" ? (
-            <p className="border-t border-line px-3 py-2 text-sm text-fg">
-              Advisory · {homeNm == null ? "No home marina" : `Home ${homeNm.toFixed(1)} nm · ${Math.round(homeMin ?? 0)} min`} · Fuel RT {fuelPlan.gallons.toFixed(0)} gal · {fuelPlan.home ? "HOME OK" : "GO HOME"}
-            </p>
-          ) : null}
-          <p className="border-t border-line px-3 py-1.5 text-xs text-muted">
+          {/* Thin edge strip: SOG · home nm · fuel — always visible in peek on phone */}
+          <p className="border-t border-line px-3 py-1 text-xs tabular-nums text-fg sm:py-1.5 sm:text-sm">
+            {cruiseKt.toFixed(0)} kt · {homeNm == null ? "No home marina" : `Home ${homeNm.toFixed(1)} nm`}
+            {homeMin != null ? ` · ${Math.round(homeMin)} min` : ""} · Fuel RT {fuelPlan.gallons.toFixed(0)} gal ·{" "}
+            {fuelPlan.home ? "HOME OK" : "GO HOME"}
+          </p>
+          <p className="hidden border-t border-line px-3 py-1.5 text-xs text-muted sm:block">
             Advisory only — not a chartplotter. Confirm with NOAA charts / Coast Pilot / your eyes.
           </p>
         </div>
@@ -479,13 +498,19 @@ function Fairwater() {
           style={{ "--panel": `${panelPx}px` } as CSSProperties}
           className={cn(
             "flex min-h-0 flex-col border-line bg-bg",
-            sheet === "open" ? "max-lg:max-h-[46vh] max-lg:flex-none max-lg:border-t" : "max-lg:shrink-0 max-lg:border-t",
-            "lg:h-auto lg:w-[var(--panel)] lg:flex-none lg:border-l",
+            // Phone: bottom sheet — cap open height so map keeps majority (never a tiny strip)
+            sheet === "open"
+              ? "max-sm:max-h-[36vh] max-sm:flex-none max-sm:border-t"
+              : "max-sm:shrink-0 max-sm:border-t",
+            // Tablet: side sheet ~40%, map stays ≥ half
+            "sm:h-auto sm:w-[40%] sm:flex-none sm:border-l sm:border-t-0",
+            // Desktop: resizable panel width
+            "lg:w-[var(--panel)]",
           )}
         >
           <button
             type="button"
-            className="flex min-h-16 w-full flex-col items-center justify-center px-4 py-2 lg:hidden"
+            className="flex min-h-14 w-full flex-col items-center justify-center px-4 py-1.5 sm:hidden"
             aria-expanded={sheet === "open"}
             onClick={() => setSheet((value) => (value === "open" ? "peek" : "open"))}
           >
@@ -494,17 +519,57 @@ function Fairwater() {
               <span className="truncate text-sm font-medium text-fg">{gateLabel ?? groundById(groundId).name}</span>
               <span className="shrink-0 text-sm text-muted">{sheet === "open" ? "Show chart" : "Open"}</span>
             </span>
-            <span className="mt-1 w-full truncate text-left text-xs text-muted">
+            <span className="mt-0.5 w-full truncate text-left text-xs text-muted">
               {fuelLabel ?? "Fuel"} · {biteLabel ?? "Bite"}
             </span>
           </button>
-          <div ref={panelRef} className={cn("min-h-0 flex-1 overflow-y-auto", sheet === "peek" && "max-lg:hidden")}>
+          {/* Desktop: bands + chart chips live in the panel, not above the map */}
+          <div className="hidden border-b border-line px-3 py-2 lg:block">
+            <div className="grid grid-cols-3 gap-2">
+              {(["inshore", "nearshore", "offshore"] as const).map((b) => (
+                <button
+                  key={b}
+                  type="button"
+                  onClick={() => chooseBand(b)}
+                  className={cn(
+                    "min-h-12 rounded-lg border px-2 py-1.5 text-left",
+                    band === b ? "border-accent bg-surface-2" : "border-line bg-bg",
+                  )}
+                >
+                  <span className="block text-xs font-medium tracking-wide text-subtle uppercase">{BAND_LABEL[b]}</span>
+                  <span className="block truncate text-sm text-fg">
+                    {live && month ? seasonNames(region, b, month) : BAND_BLURB[b]}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 flex gap-2 overflow-x-auto" role="tablist" aria-label="Map view">
+              {CHART_VIEWS.map((view) => (
+                <button
+                  key={view.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={chartView === view.id}
+                  onClick={() => setChartView(view.id)}
+                  className={cn(
+                    "h-12 shrink-0 rounded-md px-3 text-sm font-medium",
+                    chartView === view.id ? "bg-accent text-accent-fg" : "text-muted hover:bg-surface-2",
+                  )}
+                >
+                  {view.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-muted">{CHART_VIEWS.find((view) => view.id === chartView)?.note}</p>
+          </div>
+          <div ref={panelRef} className={cn("min-h-0 flex-1 overflow-y-auto", sheet === "peek" && "max-sm:hidden")}>
             <ConditionsPanel />
           </div>
         </aside>
       </div>
+      {/* Phone helm — Leave / Run / Fish */}
       <nav
-        className="grid shrink-0 grid-cols-3 gap-2 border-t border-line bg-bg px-3 py-2 lg:hidden"
+        className="grid shrink-0 grid-cols-3 gap-2 border-t border-line bg-bg px-3 py-2 sm:hidden"
         style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
         aria-label="Helm mode"
       >
@@ -519,10 +584,7 @@ function Fairwater() {
             key={id}
             type="button"
             aria-selected={helmMode === id}
-            onClick={() => {
-              setHelmMode(id);
-              setSheet(id === "run" ? "peek" : "open");
-            }}
+            onClick={() => setMode(id)}
             className={cn(
               "h-12 rounded-md text-sm font-medium",
               helmMode === id ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted",
